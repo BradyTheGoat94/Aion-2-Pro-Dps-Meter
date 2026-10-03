@@ -548,6 +548,36 @@ jobs:
           }
           Set-Content $xamlPath $xaml
 
+      - name: Add synchronized snapshot diagnostics
+        shell: pwsh
+        run: |
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          if ($main -notmatch 'long acceptedDamageEvents') {
+            $main = $main.Replace('long damageEvents, healEvents, hpEvents, otherEvents;', 'long damageEvents, healEvents, hpEvents, otherEvents;' + [Environment]::NewLine + '              long acceptedDamageEvents;' + [Environment]::NewLine + '              long snapshotId;')
+          }
+          if ($main -notmatch 'LatestEvent\.Text') {
+            $main = $main.Replace('parsedEvents++;', 'parsedEvents++;' + [Environment]::NewLine + '                      LatestEvent.Text = $"kind={e.Kind} amount={e.Amount} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} type={e.DamageType}";')
+          }
+          $main = $main.Replace('var after = engine.Snapshot();', 'var after = engine.Snapshot();' + [Environment]::NewLine + '                      if (e.Kind == CombatKind.Damage && after.FightDamage > before.FightDamage) acceptedDamageEvents++;')
+          $main = $main.Replace('EventCount.Text = parsedEvents.ToString("N0");', 'EventCount.Text = parsedEvents.ToString("N0");' + [Environment]::NewLine + '                  AcceptedDamageCount.Text = acceptedDamageEvents.ToString("N0");')
+          $main = $main.Replace('var s = engine.Snapshot();', 'var s = engine.Snapshot();' + [Environment]::NewLine + '                  snapshotId++;' + [Environment]::NewLine + '                  SnapshotState.Text = $"Snapshot #{snapshotId:N0} | FightDamage={s.FightDamage:N0} | FightDPS={s.FightDps:0.##}";')
+          Set-Content $mainPath $main
+
+          $xamlPath = "src/MainWindow.xaml"
+          $xaml = Get-Content $xamlPath -Raw
+          if ($xaml -notmatch 'x:Name="LatestEvent"') {
+            $anchor = '<TextBlock Text="LIVE PIPELINE" FontSize="16" FontWeight="SemiBold"/>'
+            $insert = $anchor + '<TextBlock Text="LATEST DECODED EVENT" Foreground="#9AA8C2" Margin="0,8,0,2"/><TextBlock x:Name="LatestEvent" Text="None yet" TextWrapping="Wrap" FontFamily="Consolas" Foreground="#F3F6FF"/><TextBlock x:Name="SnapshotState" Text="Snapshot #0 | FightDamage=0 | FightDPS=0" TextWrapping="Wrap" Foreground="#9AA8C2" Margin="0,6,0,6"/>'
+            $xaml = $xaml.Replace($anchor, $insert)
+          }
+          if ($xaml -notmatch 'x:Name="AcceptedDamageCount"') {
+            $anchor2 = '<TextBlock Text="Duplicates suppressed"/><TextBlock x:Name="DuplicateCount" Grid.Column="1" Text="0" FontWeight="Bold"/>'
+            $insert2 = $anchor2 + '<TextBlock Grid.Row="1" Text="Engine accepted damage"/><TextBlock x:Name="AcceptedDamageCount" Grid.Row="1" Grid.Column="1" Text="0" FontWeight="Bold"/>'
+            $xaml = $xaml.Replace($anchor2, $insert2)
+          }
+          Set-Content $xamlPath $xaml
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
