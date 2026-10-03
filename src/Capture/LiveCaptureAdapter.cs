@@ -21,6 +21,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     private long dropped;
     private volatile bool disposed;
     public Task Completion => worker;
+    public event Action<string>? ValidationRecord;
     public event Action<CombatEvent>? EventReceived;
     public event Action<string>? StatusChanged;
     public event Action? PacketCaptured;
@@ -112,6 +113,7 @@ public sealed class LiveCaptureAdapter : IDisposable
         foreach(var d in active is CurrentClientDecoder c?c.DecodeStream(direction,chunk,utc):active.Decode(chunk,utc))
             decoded.Add(new(utc,d.Kind,d.SourceId,d.Source,d.TargetId,d.Target,d.Skill,d.Amount,d.DamageType,d.CurrentHp,d.MaxHp,d.Effect,d.Stacks,d.SourceClass,d.DamageFlags));
         foreach(var e in decoded.Where(x=>x.Kind==CombatKind.PlayerName || primary&&x.Kind==CombatKind.Despawn))identityBridge.Observe(scope,e);
+        foreach(var e in decoded.Where(x=>x.Kind==CombatKind.PlayerName))ValidationRecord?.Invoke($"{utc:O}|tag=captureIdentity|entity={e.SourceId}|name={e.Source}|scope={scope}|conversation={conversation}|primary={primary}");
         if(lockedConversation==null)
         {
             if(!decoded.Any(x=>(x.Kind is CombatKind.Damage or CombatKind.Heal)&&x.Amount>0))return;

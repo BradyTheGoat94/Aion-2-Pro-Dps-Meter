@@ -71,6 +71,7 @@ foreach(var identity in bridge.Identities(scope,t))bridged.Apply(identity);
 bridged.Apply(bridge.Resolve(scope,Hit(0,4605,100,"Actor 4605")));bridged.Apply(bridge.Resolve(scope,Hit(0,4258,50,"Actor 4258")));
 True(bridged.Snapshot().Players.Any(p=>p.Name=="TestHero"&&p.EntityId==4605),"pre-lock self identity reaches combat rows");
 True(bridged.Snapshot().Players.Any(p=>p.Name=="TestAlly"&&p.EntityId==4258),"sibling identity reaches exact actor");
+True(bridge.Resolve(scope,Hit(0,4605,100,"FreshName")).Source=="FreshName","bridge preserves explicitly decoded names");
 True(bridge.Resolve("adapter|local|different-server",Hit(0,4605,100,"Actor 4605")).Source=="Actor 4605","identity scope isolation");
 bridge.Observe(scope,new(t,CombatKind.Despawn,4605));True(bridge.Resolve(scope,Hit(0,4605,100,"Actor 4605")).Source=="Actor 4605","bridge removes stale identity");
 True(bridge.Identities(scope,t.AddMinutes(11)).Count==0,"identity cache expires");

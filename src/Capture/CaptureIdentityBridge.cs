@@ -21,9 +21,9 @@ public sealed class CaptureIdentityBridge
     public CombatEvent Resolve(string scope,CombatEvent e)
     {
         Prune(e.Utc);
-        if(e.SourceId!=0 && names.TryGetValue((scope,e.SourceId),out var source))
+        if(e.SourceId!=0 && (string.IsNullOrWhiteSpace(e.Source)||e.Source.StartsWith("Actor ")) && names.TryGetValue((scope,e.SourceId),out var source))
             e=e with {Source=source.Event.Source,SourceClass=e.SourceClass=="Unknown"?source.Event.SourceClass:e.SourceClass};
-        if(e.TargetId!=0 && names.TryGetValue((scope,e.TargetId),out var target))e=e with {Target=target.Event.Source};
+        if(e.TargetId!=0 && (string.IsNullOrWhiteSpace(e.Target)||e.Target.StartsWith("Target ")||e.Target.StartsWith("Actor ")) && names.TryGetValue((scope,e.TargetId),out var target))e=e with {Target=target.Event.Source};
         return e;
     }
     private void Prune(DateTime utc)
