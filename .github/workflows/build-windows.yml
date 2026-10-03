@@ -1807,6 +1807,60 @@ jobs:
           $v = Get-Content $p -Raw
           if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
+      - name: Scan embedded UserInfo identity tags
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Current upstream parsers scan every decoded frame for UserInfo tags;
+          # they are not guaranteed to be the frame's primary dispatch tag.
+          if ($s -notmatch 'TryEmbeddedIdentity') {
+            $helper = @(
+              '    private Aion2Decoded? TryEmbeddedIdentity(ReadOnlySpan<byte> d, DateTime utc)',
+              '    {',
+              '        for (int i = 0; i + 2 < d.Length; i++)',
+              '        {',
+              '            string? kind = null;',
+              '            if (d[i] == 51 && d[i + 1] == 54) kind = "selfInfo";',
+              '            else if (d[i] == 69 && d[i + 1] == 54) kind = "otherInfo";',
+              '            if (kind is null) continue;',
+              '',
+              '            var evt = ObserveIdentity(d, i + 2, utc, kind);',
+              '            if (evt is not null)',
+              '            {',
+              '                ValidationRecord?.Invoke($"{utc:O}|tag=embeddedIdentity|packet={kind}|entity={evt.SourceId}|name={evt.Source}|offset={i}|raw={Convert.ToHexString(d)}");',
+              '                return evt;',
+              '            }',
+              '        }',
+              '        return null;',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for embedded identity scan" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+
+          if ($s -notmatch 'embeddedIdentity = TryEmbeddedIdentity') {
+            $dispatchAnchor = '        Aion2Decoded? evt = kind switch {'
+            if (-not $s.Contains($dispatchAnchor)) { throw "Dispatcher event anchor missing" }
+            $scan = @(
+              '        var embeddedIdentity = TryEmbeddedIdentity(frame, utc);',
+              '        if (embeddedIdentity is not null)',
+              '            yield return embeddedIdentity;',
+              '',
+              '        Aion2Decoded? evt = kind switch {'
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($dispatchAnchor, $scan)
+          }
+
+          Set-Content $p $s
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'TryEmbeddedIdentity' -or $v -notmatch 'tag=embeddedIdentity') {
+            throw "Embedded UserInfo identity scan patch failed"
+          }
+
       - name: Preserve validated class per combat actor
         shell: pwsh
         run: |
