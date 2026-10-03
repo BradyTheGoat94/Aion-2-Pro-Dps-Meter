@@ -62,6 +62,15 @@ var identityProfile=profile with {Tags=new Dictionary<string,PacketTag>(profile.
 var identityDecoder=new CurrentClientDecoder(identityProfile);
 var self=identityDecoder.Decode(Frame("3336FD235F81C1283708546573744865726F000000"),t).Single(x=>x.Kind==CombatKind.PlayerName);
 True(self.Source=="TestHero"&&self.SourceId==4605,"observed self identity prefix");
+// Sanitized replay of selfInfo -> local entity removal -> damage in the 13:00 capture.
+var localDecoder=new CurrentClientDecoder(identityProfile);
+localDecoder.Decode(Frame("3336D10B5F81C1283708546573744865726F000000"),t).ToArray();
+True(!localDecoder.Decode(Convert.FromHexString("0A218DD10B0001"),t.AddSeconds(3)).Any(x=>x.Kind==CombatKind.Despawn),"local removal must not invalidate self identity");
+var localHit=localDecoder.Decode(Convert.FromHexString("230438E3A0022400D10B40B7B70001020B95C34701000000D658F10201030100"),t.AddSeconds(3)).Single(x=>x.Kind==CombatKind.Damage);
+True(localHit.SourceId==1489&&localHit.Source=="TestHero","captured local removal sequence retains character name");
+True(localDecoder.Decode(Convert.FromHexString("0B218DED8A010000"),t.AddSeconds(4)).Any(x=>x.Kind==CombatKind.Despawn),"other entities still despawn");
+localDecoder.ResetConnection();
+True(localDecoder.Decode(Convert.FromHexString("0A218DD10B0001"),t.AddSeconds(5)).Any(x=>x.Kind==CombatKind.Despawn),"reset clears protected self identity");
 var ally=identityDecoder.Decode(Frame("4536A2210120A401070854657374416C6C7913000000"),t).Last(x=>x.Kind==CombatKind.PlayerName);
 True(ally.Source=="TestAlly"&&ally.SourceId==4258,"observed other identity prefix");
 var bridge=new Aion2DPSPro.Capture.CaptureIdentityBridge();string scope="adapter|local|server";

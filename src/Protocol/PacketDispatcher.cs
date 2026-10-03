@@ -4,6 +4,7 @@ namespace Aion2DPSPro.Protocol;
 /// implausible packets are rejected and logged rather than emitted as combat data.
 public sealed class PacketDispatcher
 {
+    private long? selfEntityId;
     private readonly HashSet<long> recentCombatIds = new();
     private readonly ProtocolProfile profile;
     private readonly Dictionary<long, PlayerIdentity> identities = new();
@@ -91,6 +92,12 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
     {
         if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
         long id=(long)value;
+        // The live log shows this removal immediately before local-player attacks.
+        // A selfInfo identity belongs to the local connection, not visibility lifetime.
+        if(id==selfEntityId) {
+            Diagnostic?.Invoke(new(DateTime.UtcNow,"identity-map","Retained local-player identity across entity removal",frame.Length));
+            return null;
+        }
         identities.Remove(id);globalPlayerNames.Remove(id);partyIdentities.Remove(id);sessionToGlobal.Remove(id);
         mobs.Remove(id);summonOwners.Remove(id);confirmedSummons.Remove(id);recentCombatIds.Remove(id);recentCombatEntityIds.Remove(id);
         foreach(var key in sessionToGlobal.Where(x=>x.Value==id).Select(x=>x.Key).ToArray())sessionToGlobal.Remove(key);
@@ -734,6 +741,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name=|status=no-name|raw={Convert.ToHexString(d)}");
             return null;
         }
+        selfEntityId=id;
         identities[id] = new PlayerIdentity(best, "Unknown");
         globalPlayerNames[id] = best;
         foreach (var link in sessionToGlobal.Where(x => x.Value == id).ToArray())
