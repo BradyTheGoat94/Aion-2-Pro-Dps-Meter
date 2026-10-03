@@ -170,8 +170,9 @@ public sealed class PacketDispatcherRegressionTests
     [Fact]
     public void CombatEngine_LatePlayerIdentity_RefreshesActiveEventHistory()
     {
-        var engine = new CombatEngine();
         var at = DateTime.UnixEpoch.AddSeconds(1);
+        var now = at.AddSeconds(2);
+        var engine = new CombatEngine(() => now);
 
         engine.Apply(new CombatEvent(
             Utc: at, Kind: CombatKind.Damage, SourceId: 15433, Source: "Actor 15433",
