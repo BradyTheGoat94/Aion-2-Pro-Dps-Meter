@@ -243,6 +243,122 @@ jobs:
           '@
           Set-Content "src/MainWindow.xaml" $xaml
 
+      - name: Apply capture integrity diagnostics
+        shell: pwsh
+        run: |
+          $capture = @'
+          using SharpPcap;
+          using PacketDotNet;
+          using Aion2DPSPro.Protocol;
+
+          namespace Aion2DPSPro.Capture;
+
+          public sealed class LiveCaptureAdapter : IDisposable
+          {
+              private readonly IAion2Decoder decoder;
+              private readonly List<ICaptureDevice> devices = new();
+              private readonly TcpStreamReassembler reassembler = new();
+              private readonly object sync = new();
+              private readonly Dictionary<string, (uint Seq, int Len, int Hash)> recent = new();
+              private string? lockedDevice;
+              private string? lockedFlow;
+
+              public event Action<CombatEvent>? EventReceived;
+              public event Action<string>? StatusChanged;
+              public event Action? PacketCaptured;
+              public event Action? DuplicateSuppressed;
+              public event Action<string>? FlowLocked;
+
+              public LiveCaptureAdapter(IAion2Decoder decoder) => this.decoder = decoder;
+
+              public void Start()
+              {
+                  var available = CaptureDeviceList.Instance;
+                  if (available.Count == 0) { StatusChanged?.Invoke("No packet capture adapter found. Install Npcap."); return; }
+                  foreach (var d in available)
+                  {
+                      try
+                      {
+                          d.OnPacketArrival += OnPacket;
+                          d.Open(DeviceModes.Promiscuous, 1000);
+                          d.Filter = "tcp port 13328";
+                          d.StartCapture();
+                          devices.Add(d);
+                      }
+                      catch { try { d.Close(); } catch { } }
+                  }
+                  StatusChanged?.Invoke($"Waiting to lock onto active AION 2 TCP/13328 flow ({devices.Count} adapters armed).");
+              }
+
+              private void OnPacket(object sender, PacketCapture capture)
+              {
+                  var raw = capture.GetPacket();
+                  var packet = Packet.ParsePacket(raw.LinkLayerType, raw.Data);
+                  var tcp = packet.Extract<TcpPacket>();
+                  if (tcp?.PayloadData is not { Length: > 0 }) return;
+                  var ip = packet.Extract<IPPacket>();
+                  if (ip == null) return;
+
+                  string device = (sender as ICaptureDevice)?.Name ?? "unknown";
+                  string flow = $"{ip.SourceAddress}:{tcp.SourcePort}>{ip.DestinationAddress}:{tcp.DestinationPort}";
+                  int hash = HashCode.Combine(tcp.PayloadData.Length,
+                      tcp.PayloadData.Length > 0 ? tcp.PayloadData[0] : 0,
+                      tcp.PayloadData.Length > 1 ? tcp.PayloadData[^1] : 0);
+
+                  lock (sync)
+                  {
+                      if (lockedDevice == null)
+                      {
+                          lockedDevice = device;
+                          lockedFlow = flow;
+                          FlowLocked?.Invoke($"{device} | {flow}");
+                          StatusChanged?.Invoke($"Locked to active AION 2 adapter/flow: {flow}");
+                      }
+                      if (device != lockedDevice || flow != lockedFlow) return;
+
+                      string key = flow;
+                      if (recent.TryGetValue(key, out var last) &&
+                          last.Seq == tcp.SequenceNumber && last.Len == tcp.PayloadData.Length && last.Hash == hash)
+                      {
+                          DuplicateSuppressed?.Invoke();
+                          return;
+                      }
+                      recent[key] = (tcp.SequenceNumber, tcp.PayloadData.Length, hash);
+                  }
+
+                  PacketCaptured?.Invoke();
+                  foreach (var chunk in reassembler.Push(flow, tcp.SequenceNumber, tcp.PayloadData))
+                  foreach (var d in decoder.Decode(chunk, DateTime.UtcNow))
+                      EventReceived?.Invoke(new CombatEvent(DateTime.UtcNow, d.Kind, d.SourceId, d.Source,
+                          d.TargetId, d.Target, d.Skill, d.Amount, d.DamageType,
+                          d.CurrentHp, d.MaxHp, d.Effect, d.Stacks));
+              }
+
+              public void Dispose()
+              {
+                  foreach (var d in devices) { try { d.StopCapture(); } catch { } try { d.Close(); } catch { } }
+                  devices.Clear();
+              }
+          }
+          '@
+          Set-Content "src/Capture/LiveCaptureAdapter.cs" $capture
+
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          $main = $main.Replace('long parsedEvents;', 'long parsedEvents;' + [Environment]::NewLine + '              long duplicates;' + [Environment]::NewLine + '              long damageEvents, healEvents, hpEvents, otherEvents;' + [Environment]::NewLine + '              string activeFlow = "Waiting...";')
+          $main = $main.Replace('capture.EventReceived += e => Dispatcher.Invoke(() =>', 'capture.DuplicateSuppressed += () => Dispatcher.Invoke(() => { duplicates++; RenderDiagnostics(decoder.ProfileId); });' + [Environment]::NewLine + '                  capture.FlowLocked += s => Dispatcher.Invoke(() => { activeFlow = s; RenderDiagnostics(decoder.ProfileId); });' + [Environment]::NewLine + '                  capture.EventReceived += e => Dispatcher.Invoke(() =>')
+          $main = $main.Replace('parsedEvents++;' + [Environment]::NewLine + '                      engine.Apply(e);', 'parsedEvents++;' + [Environment]::NewLine + '                      switch (e.Kind) { case CombatKind.Damage: damageEvents++; break; case CombatKind.Heal: healEvents++; break; case CombatKind.TargetHp: hpEvents++; break; default: otherEvents++; break; }' + [Environment]::NewLine + '                      engine.Apply(e);')
+          $main = $main.Replace('EventCount.Text = parsedEvents.ToString("N0");', 'EventCount.Text = parsedEvents.ToString("N0");' + [Environment]::NewLine + '                  DuplicateCount.Text = duplicates.ToString("N0");' + [Environment]::NewLine + '                  DamageEventCount.Text = damageEvents.ToString("N0");' + [Environment]::NewLine + '                  HealEventCount.Text = healEvents.ToString("N0");' + [Environment]::NewLine + '                  HpEventCount.Text = hpEvents.ToString("N0");' + [Environment]::NewLine + '                  OtherEventCount.Text = otherEvents.ToString("N0");' + [Environment]::NewLine + '                  ActiveFlow.Text = activeFlow;')
+          Set-Content $mainPath $main
+
+          $xamlPath = "src/MainWindow.xaml"
+          $xaml = Get-Content $xamlPath -Raw
+          $old = '<TextBlock Grid.Row="3" Text="Combat events emitted"/><TextBlock x:Name="EventCount" Grid.Row="3" Grid.Column="1" Text="0" FontWeight="Bold"/>'
+          $new = $old + '</Grid><Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions><TextBlock Text="Duplicates suppressed"/><TextBlock x:Name="DuplicateCount" Grid.Column="1" Text="0" FontWeight="Bold"/><TextBlock Grid.Row="1" Text="Damage events"/><TextBlock x:Name="DamageEventCount" Grid.Row="1" Grid.Column="1" Text="0" FontWeight="Bold"/><TextBlock Grid.Row="2" Text="Heal events"/><TextBlock x:Name="HealEventCount" Grid.Row="2" Grid.Column="1" Text="0" FontWeight="Bold"/><TextBlock Grid.Row="3" Text="HP events"/><TextBlock x:Name="HpEventCount" Grid.Row="3" Grid.Column="1" Text="0" FontWeight="Bold"/><TextBlock Grid.Row="4" Text="Other events"/><TextBlock x:Name="OtherEventCount" Grid.Row="4" Grid.Column="1" Text="0" FontWeight="Bold"/>'
+          $xaml = $xaml.Replace($old, $new)
+          $xaml = $xaml.Replace('<TextBlock Text="Protocol profile" Foreground="#9AA8C2" Margin="0,12,0,2"/>', '<TextBlock Text="Locked adapter / flow" Foreground="#9AA8C2" Margin="0,12,0,2"/><TextBlock x:Name="ActiveFlow" Text="Waiting..." TextWrapping="Wrap"/><TextBlock Text="Protocol profile" Foreground="#9AA8C2" Margin="0,12,0,2"/>')
+          Set-Content $xamlPath $xaml
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
