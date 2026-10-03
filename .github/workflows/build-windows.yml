@@ -529,6 +529,25 @@ jobs:
           $xaml = $xaml.Replace($needle, $replacement)
           Set-Content $xamlPath $xaml
 
+      - name: Add guaranteed last decoded event readout
+        shell: pwsh
+        run: |
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          if ($main -notmatch 'LastEvent\.Text') {
+            $main = $main.Replace('parsedEvents++;', 'parsedEvents++;' + [Environment]::NewLine + '                      LastEvent.Text = $"kind={e.Kind} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} amount={e.Amount} type={e.DamageType}";')
+          }
+          Set-Content $mainPath $main
+
+          $xamlPath = "src/MainWindow.xaml"
+          $xaml = Get-Content $xamlPath -Raw
+          if ($xaml -notmatch 'x:Name="LastEvent"') {
+            $anchor = '<TextBlock x:Name="Profile" Text="-" TextWrapping="Wrap"/>'
+            $insert = $anchor + '<TextBlock Text="LAST DECODED EVENT" Foreground="#9AA8C2" Margin="0,10,0,2"/><TextBlock x:Name="LastEvent" Text="None yet" TextWrapping="Wrap" FontFamily="Consolas" Foreground="#F3F6FF"/>'
+            $xaml = $xaml.Replace($anchor, $insert)
+          }
+          Set-Content $xamlPath $xaml
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
