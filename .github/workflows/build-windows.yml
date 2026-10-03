@@ -39,6 +39,11 @@ jobs:
             }
           }
 
+          $iface = "src/Protocol/IAion2Decoder.cs"
+          $ifaceText = Get-Content $iface -Raw
+          $ifaceText = $ifaceText.Replace("Decode(ReadOnlySpan<byte> payload, DateTime utc)", "Decode(byte[] payload, DateTime utc)")
+          Set-Content $iface $ifaceText
+
           $files = @(
             "src/Protocol/TcpStreamReassembler.cs",
             "src/Protocol/StreamFramer.cs",
