@@ -2078,9 +2078,31 @@ jobs:
 
           $p = "src/Protocol/PacketDispatcher.cs"
           $d = Get-Content $p -Raw
-          $d = [regex]::Replace($d, 'private static string SkillName\(int skill\)[\s\S]*?\n    \}', 'private static string SkillName(int skill)' + [Environment]::NewLine + '    {' + [Environment]::NewLine + '        return PublicGameData.SkillName(skill);' + [Environment]::NewLine + '    }', 1)
+
+          # Do not depend on the exact formatting/body of the older SkillName helper.
+          # Replace the helper body when present; otherwise add a wrapper immediately
+          # before ReadV. This keeps the patch compatible with the extracted v5 source
+          # and with earlier workflow-generated variants.
+          $methodPattern = '(?ms)^\s*private static string SkillName\s*\(\s*int\s+skill\s*\)\s*\{.*?^\s*\}'
+          if ([regex]::IsMatch($d, $methodPattern)) {
+            $replacement = '    private static string SkillName(int skill)' + [Environment]::NewLine +
+                           '    {' + [Environment]::NewLine +
+                           '        return PublicGameData.SkillName(skill);' + [Environment]::NewLine +
+                           '    }'
+            $d = [regex]::Replace($d, $methodPattern, $replacement, 1)
+          }
+          elseif ($d -notmatch 'PublicGameData\.SkillName') {
+            $readAnchor = '    private static bool ReadV('
+            if (-not $d.Contains($readAnchor)) { throw "ReadV anchor missing for public skill catalog" }
+            $wrapper = '    private static string SkillName(int skill)' + [Environment]::NewLine +
+                       '    {' + [Environment]::NewLine +
+                       '        return PublicGameData.SkillName(skill);' + [Environment]::NewLine +
+                       '    }' + [Environment]::NewLine + [Environment]::NewLine
+            $d = $d.Replace($readAnchor, $wrapper + $readAnchor)
+          }
           Set-Content $p $d
-          if ((Get-Content $p -Raw) -notmatch 'PublicGameData\.SkillName') { throw "Public skill catalog hook failed" }
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'return\s+PublicGameData\.SkillName\(skill\);') { throw "Public skill catalog hook failed" }
 
           # Bundle the same public class icon set used by A2Meter. Keep local copies
           # so the overlay never needs network access just to draw an icon.
