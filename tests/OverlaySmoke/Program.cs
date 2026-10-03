@@ -10,7 +10,7 @@ internal static class Program
  [STAThread]
  static void Main()
  {
-  var app=new Application();
+  var app=new Application {ShutdownMode=ShutdownMode.OnExplicitShutdown};
   var window=new OverlayWindow();
   void Invoke(string name,string value)=>typeof(OverlayWindow).GetMethod(name,BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(window,new object[]{value});
   string? previous=null;

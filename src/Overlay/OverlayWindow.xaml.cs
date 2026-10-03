@@ -125,6 +125,7 @@ public partial class OverlayWindow : Window
     void ApplyOverlayStyle(string name)
     {
         currentStyle=name;
+        ((System.Windows.Controls.TextBlock)PreviewBadge.Child).Text=name is "Details Inspired" or "Kagerou Inspired"?"PREVIEW":"SIMULATED PREVIEW";
         Rows.ItemTemplate=(DataTemplate)Resources["ClassicRows"];
         CategoryTabs.Visibility=Visibility.Visible; CategoryPicker.Visibility=Visibility.Collapsed;
         // Full reset: every preset starts from the same known layout.
