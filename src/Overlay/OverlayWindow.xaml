@@ -36,7 +36,7 @@
     </ListView>
     <Border Grid.Column="2" Background="#70081326" BorderBrush="#284E7D" BorderThickness="1" CornerRadius="6" Padding="10">
      <StackPanel><TextBlock Text="PLAYER DETAILS" Foreground="#8FB8FF" FontWeight="Bold"/><TextBlock x:Name="SelectedPlayer" Text="Select a player" FontSize="18" FontWeight="Bold" Margin="0,8,0,2"/><TextBlock x:Name="SelectedMeta" Foreground="#AFC9EF"/>
-      <Separator Margin="0,10" Background="#284E7D"/><TextBlock Text="Top Skills" FontWeight="Bold"/><ItemsControl x:Name="Skills" Margin="0,5,0,0"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="75"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}"/><TextBlock Grid.Column="1" Text="{Binding Damage}" HorizontalAlignment="Right" Foreground="#FF8790"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <Separator Margin="0,10" Background="#284E7D"/><TextBlock Text="Top Skills" FontWeight="Bold"/><ItemsControl x:Name="Skills" Margin="0,5,0,0"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="75"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Name}" Foreground="#EAF2FF"/><TextBlock Grid.Column="1" Text="{Binding Damage}" HorizontalAlignment="Right" Foreground="#FF8790"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
      </StackPanel>
     </Border>
    </Grid>
