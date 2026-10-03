@@ -2142,6 +2142,28 @@ jobs:
             Set-Content $proj $cs
           }
 
+      - name: Wire public skill names into decoded combat events
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $d = Get-Content $p -Raw
+
+          # The catalog helper alone is not enough: the damage/DOT return sites in
+          # the extracted v5 source still format "Skill {skill}" directly.
+          # Patch only those event-label expressions; never replace inside the
+          # SkillName helper itself (an earlier global replacement caused recursion).
+          $before = $d
+          $d = $d.Replace('$"Skill {skill}"', 'SkillName(checked((int)skill))')
+          Set-Content $p $d
+
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'SkillName\(checked\(\(int\)skill\)\)') {
+            throw "No combat skill label sites were wired to PublicGameData"
+          }
+          if ($verify -match '\$"Skill \{skill\}"') {
+            throw "Raw combat skill label remains after catalog wiring"
+          }
+
       - name: Show bundled class icons in overlay
         shell: pwsh
         run: |
