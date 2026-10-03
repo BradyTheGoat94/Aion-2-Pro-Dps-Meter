@@ -8,6 +8,7 @@ internal static class PublicGameData
 {
     private static readonly object Sync = new();
     private static Dictionary<int,string>? skills;
+    private static Dictionary<int,string>? mobs;
     private static bool attempted;
     private static readonly string CachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aion2DPSPro", "meter-bootstrap.json");
 
@@ -2092,6 +2093,14 @@ internal static class PublicGameData
         return "Skill " + raw;
     }
 
+    public static string? MobName(int code)
+    {
+        EnsureLoaded();
+        if (mobs is not null && mobs.TryGetValue(code, out var name))
+            return LocalizeEnglish(name);
+        return null;
+    }
+
     private static void EnsureLoaded()
     {
         if (attempted) return;
@@ -2120,9 +2129,43 @@ internal static class PublicGameData
                 // recursively and accept either {code,name} or {id,name}.
                 CollectSkills(doc.RootElement, map);
                 skills = map;
+                var mobMap = new Dictionary<int,string>();
+                CollectMobs(doc.RootElement, mobMap, false);
+                mobs = mobMap;
             }
             catch { }
         }
+    }
+
+    private static void CollectMobs(JsonElement node, Dictionary<int,string> map, bool insideMobs)
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            bool nowInside = insideMobs;
+            foreach (var p in node.EnumerateObject())
+                if (p.Name.Equals("mobs", StringComparison.OrdinalIgnoreCase)) nowInside = true;
+
+            if (nowInside)
+            {
+                int code = 0;
+                string? name = null;
+                foreach (var p in node.EnumerateObject())
+                {
+                    if ((p.Name.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+                         p.Name.Equals("code", StringComparison.OrdinalIgnoreCase)) &&
+                        p.Value.ValueKind == JsonValueKind.Number)
+                        p.Value.TryGetInt32(out code);
+                    else if (p.Name.Equals("name", StringComparison.OrdinalIgnoreCase) &&
+                             p.Value.ValueKind == JsonValueKind.String)
+                        name = p.Value.GetString();
+                }
+                if (code > 0 && !string.IsNullOrWhiteSpace(name)) map[code] = name;
+            }
+            foreach (var p in node.EnumerateObject())
+                CollectMobs(p.Value, map, insideMobs || p.Name.Equals("mobs", StringComparison.OrdinalIgnoreCase));
+        }
+        else if (node.ValueKind == JsonValueKind.Array)
+            foreach (var item in node.EnumerateArray()) CollectMobs(item, map, insideMobs);
     }
 
     private static void CollectSkills(JsonElement node, Dictionary<int,string> map)
