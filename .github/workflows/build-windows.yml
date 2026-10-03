@@ -501,6 +501,34 @@ jobs:
           }
           Set-Content $mainPath $main
 
+      - name: Add decoded event inspector
+        shell: pwsh
+        run: |
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          $main = $main.Replace('string activeFlow = "Waiting...";', 'string activeFlow = "Waiting...";' + [Environment]::NewLine + '              readonly Queue<string> eventInspector = new();')
+          $oldApply = 'engine.Apply(e);'
+          $newApply = @'
+                      var before = engine.Snapshot();
+                      engine.Apply(e);
+                      var after = engine.Snapshot();
+                      var accepted = e.Kind != CombatKind.Damage || after.FightDamage > before.FightDamage;
+                      var delta = after.FightDamage - before.FightDamage;
+                      var line = $"{e.Utc:HH:mm:ss.fff} {e.Kind} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} amount={e.Amount} type={e.DamageType} engineDelta={delta} {(accepted ? "ACCEPT" : "NO-DAMAGE-CHANGE")}";
+                      eventInspector.Enqueue(line);
+                      while (eventInspector.Count > 12) eventInspector.Dequeue();
+                      EventInspector.Text = string.Join(Environment.NewLine, eventInspector.Reverse());
+'@
+          $main = $main.Replace($oldApply, $newApply.TrimEnd())
+          Set-Content $mainPath $main
+
+          $xamlPath = "src/MainWindow.xaml"
+          $xaml = Get-Content $xamlPath -Raw
+          $needle = '<TextBlock x:Name="LastDecoder" Text="Waiting for traffic..." TextWrapping="Wrap"/>'
+          $replacement = $needle + '<TextBlock Text="Decoded event inspector" Foreground="#9AA8C2" Margin="0,12,0,2"/><TextBox x:Name="EventInspector" Height="145" IsReadOnly="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Background="#0A0E16" Foreground="#F3F6FF" BorderBrush="#263B5E" FontFamily="Consolas" FontSize="11"/>'
+          $xaml = $xaml.Replace($needle, $replacement)
+          Set-Content $xamlPath $xaml
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
