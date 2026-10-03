@@ -1211,6 +1211,67 @@ jobs:
             throw "Verified identity promotion patch failed"
           }
 
+      - name: Retroactively rename combat entities
+        shell: pwsh
+        run: |
+          $p = "src/MainWindow.xaml.cs"
+          $s = Get-Content $p -Raw
+
+          # Keep entity IDs as the stable aggregation key, but retain validated
+          # names learned later in the session and apply them to rendered rows.
+          if ($s -notmatch 'readonly Dictionary<long, string> liveEntityNames') {
+            $anchor = 'readonly CombatEngine engine = new();'
+            if (-not $s.Contains($anchor)) { throw "CombatEngine field anchor missing" }
+            $s = $s.Replace($anchor, $anchor + [Environment]::NewLine +
+              '              readonly Dictionary<long, string> liveEntityNames = new();')
+          }
+
+          # Learn PlayerName events even if the player has already dealt damage.
+          $apply = 'engine.Apply(e);'
+          if ($s.Contains($apply) -and $s -notmatch 'liveEntityNames\[e.SourceId\] = e.Source') {
+            $learn = @(
+              '                      if (e.Kind == CombatKind.PlayerName && e.SourceId > 0 && !string.IsNullOrWhiteSpace(e.Source))',
+              '                          liveEntityNames[e.SourceId] = e.Source;',
+              '                      engine.Apply(e);'
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($apply, $learn)
+          }
+
+          # Before each render, rewrite Actor <id> labels in the snapshot rows using
+          # names learned at any later point in the same capture session. We patch
+          # the display projection, not the damage totals.
+          if ($s -notmatch 'ApplyLiveEntityNames') {
+            $helper = @(
+              '',
+              '              private string ApplyLiveEntityNames(string label)',
+              '              {',
+              '                  if (string.IsNullOrWhiteSpace(label)) return label;',
+              '                  const string prefix = "Actor ";',
+              '                  if (!label.StartsWith(prefix, StringComparison.Ordinal)) return label;',
+              '                  if (!long.TryParse(label.Substring(prefix.Length), out var id)) return label;',
+              '                  return liveEntityNames.TryGetValue(id, out var name) ? name : label;',
+              '              }',
+              ''
+            ) -join [Environment]::NewLine
+            $lastBrace = $s.LastIndexOf('}')
+            if ($lastBrace -lt 0) { throw "MainWindow class closing brace missing" }
+            $s = $s.Insert($lastBrace, $helper)
+          }
+
+          # MainWindow's player list binds to snapshot rows. Replace row Name access
+          # in the render projection with the retroactive resolver where possible.
+          $s = $s.Replace('Name = p.Name,', 'Name = ApplyLiveEntityNames(p.Name),')
+          $s = $s.Replace('Player = p.Name,', 'Player = ApplyLiveEntityNames(p.Name),')
+          $s = $s.Replace('PlayerName = p.Name,', 'PlayerName = ApplyLiveEntityNames(p.Name),')
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'liveEntityNames' -or
+              $verify -notmatch 'CombatKind.PlayerName' -or
+              $verify -notmatch 'ApplyLiveEntityNames') {
+            throw "Retroactive identity UI patch failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
