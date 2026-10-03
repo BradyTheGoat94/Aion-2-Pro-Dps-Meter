@@ -1193,6 +1193,48 @@ jobs:
             throw "Mob-spawn identity promotion patch failed"
           }
 
+      - name: Bridge named spawn packets to observed combat IDs
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          if ($s -notmatch 'recentCombatIds = new') {
+            $classLine = 'public sealed class PacketDispatcher'
+            if (-not $s.Contains($classLine)) { throw "PacketDispatcher class anchor missing" }
+            $s = $s.Replace($classLine, $classLine + [Environment]::NewLine + '{' + [Environment]::NewLine + '    private readonly HashSet<long> recentCombatIds = new();')
+            $s = $s.Replace($classLine + [Environment]::NewLine + '{' + [Environment]::NewLine + '{', $classLine + [Environment]::NewLine + '{')
+          }
+
+          if ($s -notmatch 'recentCombatIds.Add') {
+            $actor = 'if (!ReadV(d, ref p, out var actor) || actor==target || actor==0 || target==0) return null;'
+            if (-not $s.Contains($actor)) { throw "Damage actor anchor missing" }
+            $s = $s.Replace($actor, $actor + [Environment]::NewLine + '        recentCombatIds.Add((long)actor); recentCombatIds.Add((long)target);')
+          }
+
+          $old = '                long entity = (long)rawEntity;'
+          $new = @(
+            '                long entity = (long)rawEntity;',
+            '                long combatEntity = entity;',
+            '                for (int i = Math.Max(start, 0); i + 3 < d.Length; i++)',
+            '                {',
+            '                    long candidate = d[i] | ((long)d[i+1] << 8) | ((long)d[i+2] << 16) | ((long)d[i+3] << 24);',
+            '                    if (candidate != entity && recentCombatIds.Contains(candidate)) { combatEntity = candidate; break; }',
+            '                }'
+          ) -join [Environment]::NewLine
+          if (-not $s.Contains($old)) { throw "Spawn entity anchor missing" }
+          $s = $s.Replace($old, $new)
+
+          $s = $s.Replace('identities[entity] = new PlayerIdentity(spawnName, "Unknown");', 'identities[entity] = new PlayerIdentity(spawnName, "Unknown");' + [Environment]::NewLine + '                identities[combatEntity] = new PlayerIdentity(spawnName, "Unknown");')
+          $s = $s.Replace('|tag=spawnIdentity|entity={entity}|name=', '|tag=spawnIdentity|entity={entity}|combatEntity={combatEntity}|name=')
+          $s = $s.Replace('new(CombatKind.PlayerName,entity,spawnName,', 'new(CombatKind.PlayerName,combatEntity,spawnName,')
+
+          Set-Content $p $s
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'recentCombatIds' -or $v -notmatch 'combatEntity=\{combatEntity\}' -or $v -notmatch 'PlayerName,combatEntity') {
+            throw "Spawn-to-combat identity bridge patch failed"
+          }
+
       - name: Parse structured identity character names
         shell: pwsh
         run: |
