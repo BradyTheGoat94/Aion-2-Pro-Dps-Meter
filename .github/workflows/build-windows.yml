@@ -2102,6 +2102,59 @@ jobs:
             Set-Content $proj $cs
           }
 
+      - name: Show bundled class icons in overlay
+        shell: pwsh
+        run: |
+          $converter = @(
+            'using System.Globalization;',
+            'using System.Windows.Data;',
+            '',
+            'namespace Aion2DPSPro.Overlay;',
+            'public sealed class ClassIconConverter : IValueConverter',
+            '{',
+            '    public object? Convert(object value, Type targetType, object parameter, CultureInfo culture)',
+            '    {',
+            '        var c = value?.ToString();',
+            '        if (string.IsNullOrWhiteSpace(c) || c == "Unknown") return null;',
+            '        return new Uri($"pack://application:,,,/Assets/ClassIcons/{c}.png", UriKind.Absolute);',
+            '    }',
+            '    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();',
+            '}'
+          ) -join [Environment]::NewLine
+          Set-Content "src/Overlay/ClassIconConverter.cs" $converter
+
+          $patched = $false
+          $files = Get-ChildItem "src/Overlay" -Filter "*.xaml" -File -ErrorAction SilentlyContinue
+          foreach ($file in $files) {
+            $x = Get-Content $file.FullName -Raw
+            if ($x -notmatch '\{Binding (Class|ClassName)\}') { continue }
+
+            if ($x -notmatch 'xmlns:icons=') {
+              $x = [regex]::Replace($x, '(xmlns:x="http://schemas\.microsoft\.com/winfx/2006/xaml")', '$1' + [Environment]::NewLine + '        xmlns:icons="clr-namespace:Aion2DPSPro.Overlay"', 1)
+            }
+            if ($x -notmatch 'ClassIconConverter x:Key="ClassIconConverter"') {
+              $windowOpen = [regex]::Match($x, '<Window[\s\S]*?>').Value
+              if ($windowOpen) {
+                $res = $windowOpen + [Environment]::NewLine + '  <Window.Resources><icons:ClassIconConverter x:Key="ClassIconConverter"/></Window.Resources>'
+                $x = $x.Replace($windowOpen, $res)
+              }
+            }
+
+            $pattern = '<TextBlock([^>]*?)Text="\{Binding (Class|ClassName)\}"([^>]*)/>'
+            $m = [regex]::Match($x, $pattern)
+            if ($m.Success) {
+              $binding = $m.Groups[2].Value
+              $replacement = '<StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,4,0" Source="{Binding ' + $binding + ', Converter={StaticResource ClassIconConverter}}"/><TextBlock Text="{Binding ' + $binding + '}"/></StackPanel>'
+              $x = $x.Remove($m.Index, $m.Length).Insert($m.Index, $replacement)
+              Set-Content $file.FullName $x
+              $patched = $true
+              break
+            }
+          }
+          if (-not $patched) {
+            Write-Host "Class binding is code-rendered rather than XAML; icons are bundled for the next renderer patch."
+          }
+
       - name: Preserve validated class per combat actor
         shell: pwsh
         run: |
