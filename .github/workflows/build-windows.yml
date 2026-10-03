@@ -2005,6 +2005,103 @@ jobs:
             throw "Global/session identity link patch failed"
           }
 
+      - name: Add public AION 2 game data catalog
+        shell: pwsh
+        run: |
+          $catalog = @(
+            'using System.Net.Http;',
+            'using System.Text.Json;',
+            '',
+            'namespace Aion2DPSPro.Protocol;',
+            '',
+            'internal static class PublicGameData',
+            '{',
+            '    private static readonly object Sync = new();',
+            '    private static Dictionary<int,string>? skills;',
+            '    private static bool attempted;',
+            '    private static readonly string CachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aion2DPSPro", "meter-bootstrap.json");',
+            '',
+            '    public static string SkillName(int raw)',
+            '    {',
+            '        EnsureLoaded();',
+            '        if (skills is not null)',
+            '        {',
+            '            if (skills.TryGetValue(raw, out var exact)) return exact;',
+            '            int r10 = raw / 10 * 10;',
+            '            if (r10 != raw && skills.TryGetValue(r10, out var n10)) return n10;',
+            '            int r10k = raw / 10000 * 10000;',
+            '            if (r10k != raw && skills.TryGetValue(r10k, out var n10k)) return n10k;',
+            '        }',
+            '        return "Skill " + raw;',
+            '    }',
+            '',
+            '    private static void EnsureLoaded()',
+            '    {',
+            '        if (attempted) return;',
+            '        lock (Sync)',
+            '        {',
+            '            if (attempted) return;',
+            '            attempted = true;',
+            '            string? json = null;',
+            '            try',
+            '            {',
+            '                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };',
+            '                json = http.GetStringAsync("https://api.aion2meter.com/api/gamedata/meter-bootstrap").GetAwaiter().GetResult();',
+            '                Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!);',
+            '                File.WriteAllText(CachePath, json);',
+            '            }',
+            '            catch',
+            '            {',
+            '                try { if (File.Exists(CachePath)) json = File.ReadAllText(CachePath); } catch { }',
+            '            }',
+            '            if (string.IsNullOrWhiteSpace(json)) return;',
+            '            try',
+            '            {',
+            '                using var doc = JsonDocument.Parse(json);',
+            '                if (!doc.RootElement.TryGetProperty("skills", out var rows)) return;',
+            '                var map = new Dictionary<int,string>();',
+            '                foreach (var row in rows.EnumerateArray())',
+            '                {',
+            '                    if (!row.TryGetProperty("code", out var c) || !c.TryGetInt32(out var code) || code <= 0) continue;',
+            '                    if (!row.TryGetProperty("name", out var n)) continue;',
+            '                    var name = n.GetString();',
+            '                    if (!string.IsNullOrWhiteSpace(name)) map[code] = name;',
+            '                }',
+            '                skills = map;',
+            '            }',
+            '            catch { }',
+            '        }',
+            '    }',
+            '}'
+          ) -join [Environment]::NewLine
+          Set-Content "src/Protocol/PublicGameData.cs" $catalog
+
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $d = Get-Content $p -Raw
+          $d = [regex]::Replace($d, 'private static string SkillName\(int skill\)[\s\S]*?\n    \}', 'private static string SkillName(int skill)' + [Environment]::NewLine + '    {' + [Environment]::NewLine + '        return PublicGameData.SkillName(skill);' + [Environment]::NewLine + '    }', 1)
+          Set-Content $p $d
+          if ((Get-Content $p -Raw) -notmatch 'PublicGameData\.SkillName') { throw "Public skill catalog hook failed" }
+
+          # Bundle the same public class icon set used by A2Meter. Keep local copies
+          # so the overlay never needs network access just to draw an icon.
+          $iconDir = "src/Assets/ClassIcons"
+          New-Item -ItemType Directory -Force -Path $iconDir | Out-Null
+          $icons = @{
+            "Gladiator"="검성.png"; "Templar"="수호성.png"; "Ranger"="궁성.png"; "Assassin"="살성.png";
+            "Spiritmaster"="정령성.png"; "Sorcerer"="마도성.png"; "Cleric"="치유성.png"; "Chanter"="호법성.png"
+          }
+          foreach ($kv in $icons.GetEnumerator()) {
+            $encoded = [uri]::EscapeDataString($kv.Value)
+            $url = "https://cdn.jsdelivr.net/gh/a2meter/a2meter.github.io@v1.0.1/Assets/Icon/Job/$encoded"
+            Invoke-WebRequest -Uri $url -OutFile (Join-Path $iconDir ($kv.Key + ".png"))
+          }
+          $proj = "src/Aion2DPSPro.csproj"
+          $cs = Get-Content $proj -Raw
+          if ($cs -notmatch 'Assets\\ClassIcons') {
+            $cs = $cs.Replace('</Project>', '  <ItemGroup><Resource Include="Assets\ClassIcons\*.png" /></ItemGroup>' + [Environment]::NewLine + '</Project>')
+            Set-Content $proj $cs
+          }
+
       - name: Preserve validated class per combat actor
         shell: pwsh
         run: |
