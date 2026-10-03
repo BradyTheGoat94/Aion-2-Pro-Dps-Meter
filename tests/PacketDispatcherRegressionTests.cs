@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Aion2DPSPro.Protocol;
+using Aion2DPSPro.Capture;
 using Xunit;
 
 namespace Aion2DPSPro.Tests;
@@ -94,6 +95,30 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(damageType, hit.DamageType);
     }
 
+
+
+    [Fact]
+    public void CaptureIdentityBridge_SharesIdentityAcrossDuplicateNpcapAdapters()
+    {
+        var bridge = new CaptureIdentityBridge();
+        var at = DateTime.UnixEpoch.AddSeconds(1);
+        const string conversation = "192.168.1.197|193.202.112.15|conversation=192.168.1.197:55333<>193.202.112.15:13328";
+        string identityScope = @"\\Device\\NPF_{ADAPTER_A}|" + conversation;
+        string combatScope = @"\\Device\\NPF_{ADAPTER_B}|" + conversation;
+
+        bridge.Observe(identityScope, new CombatEvent(
+            Utc: at, Kind: CombatKind.PlayerName, SourceId: 1761,
+            Source: "KnownPlayer", SourceClass: "Templar"));
+
+        var resolved = bridge.Resolve(combatScope, new CombatEvent(
+            Utc: at.AddSeconds(1), Kind: CombatKind.Damage, SourceId: 1761,
+            Source: "Actor 1761", TargetId: 69146, Target: "Executioner Barthien",
+            Skill: "Judgment", Amount: 10401, DamageType: DamageType.Crit,
+            SourceClass: "Unknown"));
+
+        Assert.Equal("KnownPlayer", resolved.Source);
+        Assert.Equal("Templar", resolved.SourceClass);
+    }
 
     [Fact]
     public void CombatEngine_LatePlayerIdentity_RefreshesActiveEventHistory()
