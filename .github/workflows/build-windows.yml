@@ -1520,86 +1520,84 @@ jobs:
             throw "Validated combat-name propagation/self identity patch failed"
           }
 
-      - name: Persist validated entity identities across sessions
+      - name: Decode party roster identities for combat actors
         shell: pwsh
         run: |
-          $p = "src/MainWindow.xaml.cs"
+          $p = "src/Protocol/PacketDispatcher.cs"
           $s = Get-Content $p -Raw
 
-          # Persist only identities emitted as validated PlayerName events. Numeric
-          # entity ID remains the key; no fuzzy/positional matching is used.
-          if ($s -notmatch 'identityCachePath') {
-            $fieldAnchor = 'readonly Dictionary<long, string> liveEntityNames = new();'
-            if (-not $s.Contains($fieldAnchor)) { throw "liveEntityNames field missing" }
-            $fields = $fieldAnchor + [Environment]::NewLine +
-              '              readonly string identityCachePath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aion2DPSPro", "identity-cache.tsv");'
-            $s = $s.Replace($fieldAnchor, $fields)
+          if ($s -notmatch 'partyIdentities') {
+            $anchor = 'private readonly Dictionary<long, PlayerIdentity> identities = new();'
+            if (-not $s.Contains($anchor)) { throw "Identity dictionary anchor missing" }
+            $s = $s.Replace($anchor, $anchor + [Environment]::NewLine +
+              '    private readonly Dictionary<long, PlayerIdentity> partyIdentities = new();')
           }
 
-          if ($s -notmatch 'LoadIdentityCache\(\);') {
-            $ctorAnchor = 'InitializeComponent();'
-            if (-not $s.Contains($ctorAnchor)) { throw "MainWindow constructor anchor missing" }
-            $s = $s.Replace($ctorAnchor, $ctorAnchor + [Environment]::NewLine + '                  LoadIdentityCache();')
+          # Party protocol uses opcode + 0x97. Parse it before the normal tag table.
+          if ($s -notmatch 'TryObservePartyIdentities\(frame') {
+            $anchor = 'var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;'
+            if (-not $s.Contains($anchor)) { throw "Dispatcher tag lookup anchor missing" }
+            $insert = @(
+              '        if (b == 0x97 && (a == 0x01 || a == 0x02 || a == 0x0B))',
+              '        {',
+              '            foreach (var partyEvt in TryObservePartyIdentities(frame, p + 2, utc, a))',
+              '                yield return partyEvt;',
+              '            yield break;',
+              '        }',
+              '        ' + $anchor
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($anchor, $insert)
           }
 
-          # Save every validated mapping as soon as it is learned.
-          $learn = 'if (e.Kind == CombatKind.PlayerName && e.SourceId > 0 && !string.IsNullOrWhiteSpace(e.Source))' + [Environment]::NewLine +
-                   '                          liveEntityNames[e.SourceId] = e.Source;'
-          if ($s.Contains($learn) -and $s -notmatch 'SaveIdentityCache\(\);') {
-            $replacement = 'if (e.Kind == CombatKind.PlayerName && e.SourceId > 0 && !string.IsNullOrWhiteSpace(e.Source))' + [Environment]::NewLine +
-              '                      {' + [Environment]::NewLine +
-              '                          liveEntityNames[e.SourceId] = e.Source;' + [Environment]::NewLine +
-              '                          SaveIdentityCache();' + [Environment]::NewLine +
-              '                      }'
-            $s = $s.Replace($learn, $replacement)
-          }
-
-          if ($s -notmatch 'private void LoadIdentityCache\(') {
+          if ($s -notmatch 'IEnumerable<Aion2Decoded> TryObservePartyIdentities') {
             $helperLines = @(
-              '',
-              '              private void LoadIdentityCache()',
-              '              {',
-              '                  try',
-              '                  {',
-              '                      if (!System.IO.File.Exists(identityCachePath)) return;',
-              '                      foreach (var line in System.IO.File.ReadAllLines(identityCachePath))',
-              '                      {',
-              '                          var parts = line.Split(''\t'', 2);',
-              '                          if (parts.Length != 2 || !long.TryParse(parts[0], out var id) || id <= 0) continue;',
-              '                          var name = parts[1].Trim();',
-              '                          if (string.IsNullOrWhiteSpace(name)) continue;',
-              '                          liveEntityNames[id] = name;',
-              '                      }',
-              '                  }',
-              '                  catch { }',
-              '              }',
-              '',
-              '              private void SaveIdentityCache()',
-              '              {',
-              '                  try',
-              '                  {',
-              '                      var dir = System.IO.Path.GetDirectoryName(identityCachePath);',
-              '                      if (!string.IsNullOrWhiteSpace(dir)) System.IO.Directory.CreateDirectory(dir);',
-              '                      var lines = liveEntityNames.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key}\t{kv.Value}");',
-              '                      System.IO.File.WriteAllLines(identityCachePath, lines);',
-              '                  }',
-              '                  catch { }',
-              '              }',
+              '    private IEnumerable<Aion2Decoded> TryObservePartyIdentities(byte[] d, int start, DateTime utc, byte opcode)',
+              '    {',
+              '        // Current party roster layout places CharacterId 8 bytes before the',
+              '        // length-prefixed nickname and ServerId immediately before the name.',
+              '        // Require all three structural checks before accepting a mapping.',
+              '        var emitted = new HashSet<long>();',
+              '        int end = Math.Min(d.Length, start + 4096);',
+              '        for (int off = Math.Max(start + 8, 8); off < end; off++)',
+              '        {',
+              '            int len = d[off];',
+              '            if (len < 2 || len > 48 || off + 1 + len > end) continue;',
+              '            int sid = d[off - 2] | (d[off - 1] << 8);',
+              '            if (sid < 1001 || sid > 2021) continue;',
+              '            uint cid = (uint)(d[off - 8] | (d[off - 7] << 8) | (d[off - 6] << 16) | (d[off - 5] << 24));',
+              '            if (cid == 0 || cid > 500000) continue;',
+              '            string name;',
+              '            try { name = System.Text.Encoding.UTF8.GetString(d, off + 1, len); } catch { continue; }',
+              '            if (string.IsNullOrWhiteSpace(name) || name.All(char.IsDigit)) continue;',
+              '            bool valid = true;',
+              '            foreach (char c in name)',
+              '            {',
+              '                if (!(char.IsLetterOrDigit(c) || c == ''_'' || c == ''-'')) { valid = false; break; }',
+              '            }',
+              '            if (!valid) continue;',
+              '            long id = cid;',
+              '            partyIdentities[id] = new PlayerIdentity(name, "Unknown");',
+              '            identities[id] = new PlayerIdentity(name, "Unknown");',
+              '            ValidationRecord?.Invoke($"{utc:O}|tag=partyIdentity|opcode=0x{opcode:X2}|entity={id}|name={name}|server={sid}|combatMatch={recentCombatEntityIds.Contains(id)}");',
+              '            Diagnostic?.Invoke(new(utc,"party-identity",$"Mapped party entity {id} -> {name} server={sid}",d.Length));',
+              '            if (emitted.Add(id))',
+              '                yield return new(CombatKind.PlayerName, id, name, 0, "", "", 0, DamageType.Unknown, 0,0,"",0);',
+              '        }',
+              '    }',
               ''
             )
             $helper = $helperLines -join [Environment]::NewLine
-            $lastBrace = $s.LastIndexOf('}')
-            if ($lastBrace -lt 0) { throw "MainWindow closing brace missing" }
-            $s = $s.Insert($lastBrace, $helper)
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for party identity parser" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
           }
 
           Set-Content $p $s
           $verify = Get-Content $p -Raw
-          if ($verify -notmatch 'identity-cache.tsv' -or
-              $verify -notmatch 'LoadIdentityCache\(\);' -or
-              $verify -notmatch 'SaveIdentityCache\(\);' -or
-              $verify -notmatch 'liveEntityNames.TryGetValue\(e.SourceId') {
-            throw "Persistent identity cache patch failed"
+          if ($verify -notmatch 'b == 0x97' -or
+              $verify -notmatch 'tag=partyIdentity' -or
+              $verify -notmatch 'partyIdentities') {
+            throw "Party identity parser patch failed"
           }
 
       - name: Setup .NET 8
