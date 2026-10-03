@@ -359,6 +359,24 @@ jobs:
           $xaml = $xaml.Replace('<TextBlock Text="Protocol profile" Foreground="#9AA8C2" Margin="0,12,0,2"/>', '<TextBlock Text="Locked adapter / flow" Foreground="#9AA8C2" Margin="0,12,0,2"/><TextBlock x:Name="ActiveFlow" Text="Waiting..." TextWrapping="Wrap"/><TextBlock Text="Protocol profile" Foreground="#9AA8C2" Margin="0,12,0,2"/>')
           Set-Content $xamlPath $xaml
 
+      - name: Fix bidirectional conversation capture and event counters
+        shell: pwsh
+        run: |
+          $capturePath = "src/Capture/LiveCaptureAdapter.cs"
+          $capture = Get-Content $capturePath -Raw
+          $capture = $capture.Replace('private string? lockedFlow;', 'private string? lockedConversation;')
+          $capture = $capture.Replace('string flow = $"{{ip.SourceAddress}}:{{tcp.SourcePort}}>{{ip.DestinationAddress}}:{{tcp.DestinationPort}}";', 'string flow = $"{{ip.SourceAddress}}:{{tcp.SourcePort}}>{{ip.DestinationAddress}}:{{tcp.DestinationPort}}";' + [Environment]::NewLine + '                  string ep1 = $"{{ip.SourceAddress}}:{{tcp.SourcePort}}";' + [Environment]::NewLine + '                  string ep2 = $"{{ip.DestinationAddress}}:{{tcp.DestinationPort}}";' + [Environment]::NewLine + '                  string conversation = string.CompareOrdinal(ep1, ep2) <= 0 ? $"{{ep1}}<>{{ep2}}" : $"{{ep2}}<>{{ep1}}";')
+          $capture = $capture.Replace('lockedFlow = flow;', 'lockedConversation = conversation;')
+          $capture = $capture.Replace('FlowLocked?.Invoke($"{{device}} | {{flow}}");', 'FlowLocked?.Invoke($"{{device}} | {{conversation}}");')
+          $capture = $capture.Replace('StatusChanged?.Invoke($"Locked to active AION 2 adapter/flow: {{flow}}");', 'StatusChanged?.Invoke($"Locked to active AION 2 bidirectional conversation: {{conversation}}");')
+          $capture = $capture.Replace('if (device != lockedDevice || flow != lockedFlow) return;', 'if (device != lockedDevice || conversation != lockedConversation) return;')
+          Set-Content $capturePath $capture
+
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          $main = $main.Replace('switch (e.Kind) { case CombatKind.Damage: damageEvents++; break; case CombatKind.Heal: healEvents++; break; case CombatKind.TargetHp: hpEvents++; break; default: otherEvents++; break; }', 'if (e.Kind == CombatKind.Damage) damageEvents++; else if (e.Kind == CombatKind.Heal) healEvents++; else if (e.Kind == CombatKind.TargetHp) hpEvents++; else otherEvents++;')
+          Set-Content $mainPath $main
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
