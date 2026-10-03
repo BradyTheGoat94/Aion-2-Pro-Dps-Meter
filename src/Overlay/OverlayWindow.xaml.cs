@@ -10,8 +10,10 @@ public partial class OverlayWindow : Window
 {
     MeterSnapshot? last;
     string currentTheme = "Aion Blue/Red";
+    string currentStyle = "Classic";
     bool clickThrough;
-    public OverlayWindow() { InitializeComponent(); ApplyTheme(currentTheme); }
+    bool showDetails = true;
+    public OverlayWindow() { InitializeComponent(); ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); }
     static readonly Dictionary<string,string> Colors = new(StringComparer.OrdinalIgnoreCase) {
         ["Gladiator"]="#E65353", ["Templar"]="#E8903D", ["Assassin"]="#C45CFF", ["Ranger"]="#F2C94C",
         ["Sorcerer"]="#4DA3FF", ["Spiritmaster"]="#48C9D8", ["Cleric"]="#6DDB72", ["Chanter"]="#D6DCE8", ["Brawler"]="#FF7A45", ["Unknown"]="#AAB6CC" };
@@ -30,11 +32,17 @@ public partial class OverlayWindow : Window
 
     void OpenSettings(object sender, RoutedEventArgs e)
     {
-        var w = new Window { Title="AION 2 DPS — Overlay Settings", Width=390, Height=430,
+        var w = new Window { Title="AION 2 DPS — Overlay Settings", Width=410, Height=540,
             WindowStartupLocation=WindowStartupLocation.CenterOwner, Owner=this, Background=Brush("#0A0E16"), Foreground=Brush("#F4F7FF"), ResizeMode=ResizeMode.NoResize };
         var panel = new System.Windows.Controls.StackPanel { Margin=new Thickness(20) };
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="OVERLAY SETTINGS", FontSize=22, FontWeight=FontWeights.Bold, Margin=new Thickness(0,0,0,16) });
-        panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Theme", Foreground=Brush("#9DB7DE") });
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Overlay style", Foreground=Brush("#9DB7DE") });
+        var styles = new System.Windows.Controls.ComboBox { Margin=new Thickness(0,5,0,14), Height=30 };
+        foreach (var n in StyleNames) styles.Items.Add(n);
+        styles.SelectedItem=currentStyle;
+        styles.SelectionChanged += (_,__) => { if(styles.SelectedItem is string name){ currentStyle=name; ApplyOverlayStyle(name); } };
+        panel.Children.Add(styles);
+        panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Color theme", Foreground=Brush("#9DB7DE") });
         var themes = new System.Windows.Controls.ComboBox { Margin=new Thickness(0,5,0,14), Height=30 };
         foreach (var n in ThemeNames) themes.Items.Add(n);
         themes.SelectedItem=currentTheme;
@@ -44,9 +52,9 @@ public partial class OverlayWindow : Window
         var opacity = new System.Windows.Controls.Slider { Minimum=.35, Maximum=1, Value=Opacity, TickFrequency=.05, IsSnapToTickEnabled=true, Margin=new Thickness(0,5,0,14) };
         opacity.ValueChanged += (_,__) => Opacity=opacity.Value;
         panel.Children.Add(opacity);
-        var detail = new System.Windows.Controls.CheckBox { Content="Show player detail panel", IsChecked=DetailPanel.Visibility==Visibility.Visible, Margin=new Thickness(0,4,0,8) };
-        detail.Checked += (_,__) => DetailPanel.Visibility=Visibility.Visible;
-        detail.Unchecked += (_,__) => DetailPanel.Visibility=Visibility.Collapsed;
+        var detail = new System.Windows.Controls.CheckBox { Content="Show player detail panel", IsChecked=showDetails, Margin=new Thickness(0,4,0,8) };
+        detail.Checked += (_,__) => { showDetails=true; ApplyOverlayStyle(currentStyle); };
+        detail.Unchecked += (_,__) => { showDetails=false; ApplyOverlayStyle(currentStyle); };
         panel.Children.Add(detail);
         var top = new System.Windows.Controls.CheckBox { Content="Always on top", IsChecked=Topmost, Margin=new Thickness(0,4,0,8) };
         top.Checked += (_,__) => Topmost=true; top.Unchecked += (_,__) => Topmost=false; panel.Children.Add(top);
@@ -57,6 +65,67 @@ public partial class OverlayWindow : Window
     }
 
     static readonly string[] ThemeNames = { "Aion Blue/Red", "Neon Spectrum", "Void Purple", "Emerald Glass", "Solar Flare", "Ice Crystal" };
+    static readonly string[] StyleNames = { "Classic", "Compact", "Minimal", "Glass", "Tournament" };
+
+    void ApplyOverlayStyle(string name)
+    {
+        currentStyle=name;
+        // Reset shared layout properties first so every selection is reversible.
+        Tabs.Visibility=Visibility.Visible;
+        FooterBar.Visibility=Visibility.Visible;
+        HeaderBar.Visibility=Visibility.Visible;
+        DetailPanel.Visibility=showDetails?Visibility.Visible:Visibility.Collapsed;
+        Root.CornerRadius=new CornerRadius(9);
+        Root.BorderThickness=new Thickness(1.4);
+        Rows.BorderThickness=new Thickness(1);
+        Rows.Margin=new Thickness(0);
+        HeaderBar.Height=double.NaN;
+        FooterBar.Opacity=1;
+        DetailPanel.Opacity=1;
+
+        switch(name)
+        {
+            case "Compact":
+                Width=640; Height=430; MinWidth=520; MinHeight=320;
+                DetailPanel.Visibility=Visibility.Collapsed;
+                FooterBar.Visibility=Visibility.Collapsed;
+                Root.CornerRadius=new CornerRadius(6);
+                Root.BorderThickness=new Thickness(1);
+                break;
+            case "Minimal":
+                Width=570; Height=360; MinWidth=480; MinHeight=280;
+                Tabs.Visibility=Visibility.Collapsed;
+                DetailPanel.Visibility=Visibility.Collapsed;
+                FooterBar.Visibility=Visibility.Collapsed;
+                Root.CornerRadius=new CornerRadius(3);
+                Root.BorderThickness=new Thickness(1);
+                Rows.BorderThickness=new Thickness(0);
+                break;
+            case "Glass":
+                Width=780; Height=560; MinWidth=560; MinHeight=380;
+                Root.Opacity=.88;
+                Root.CornerRadius=new CornerRadius(16);
+                Root.BorderThickness=new Thickness(1);
+                Rows.Opacity=.92;
+                DetailPanel.Opacity=.92;
+                break;
+            case "Tournament":
+                Width=900; Height=620; MinWidth=680; MinHeight=440;
+                Root.CornerRadius=new CornerRadius(0);
+                Root.BorderThickness=new Thickness(2);
+                Rows.BorderThickness=new Thickness(0,2,0,2);
+                FooterBar.Opacity=.96;
+                break;
+            default:
+                Width=780; Height=560; MinWidth=560; MinHeight=380;
+                Root.Opacity=1;
+                Rows.Opacity=1;
+                break;
+        }
+
+        // Ensure opacity changes from Glass never leak into another style.
+        if(name!="Glass") { Root.Opacity=1; Rows.Opacity=1; DetailPanel.Opacity=1; }
+    }
     void ApplyTheme(string name)
     {
         var p = name switch {
