@@ -1202,8 +1202,9 @@ jobs:
           if ($s -notmatch 'recentCombatIds = new') {
             $classLine = 'public sealed class PacketDispatcher'
             if (-not $s.Contains($classLine)) { throw "PacketDispatcher class anchor missing" }
-            $s = $s.Replace($classLine, $classLine + [Environment]::NewLine + '{' + [Environment]::NewLine + '    private readonly HashSet<long> recentCombatIds = new();')
-            $s = $s.Replace($classLine + [Environment]::NewLine + '{' + [Environment]::NewLine + '{', $classLine + [Environment]::NewLine + '{')
+            $classPattern = 'public sealed class PacketDispatcher\\s*\\{'
+            if ($s -notmatch $classPattern) { throw "PacketDispatcher class body anchor missing" }
+            $s = [regex]::Replace($s, $classPattern, 'public sealed class PacketDispatcher' + [Environment]::NewLine + '{' + [Environment]::NewLine + '    private readonly HashSet<long> recentCombatIds = new();', 1)
           }
 
           if ($s -notmatch 'recentCombatIds.Add') {
