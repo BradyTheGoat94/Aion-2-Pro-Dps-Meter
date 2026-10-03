@@ -18,6 +18,6 @@ public sealed record Aion2Decoded(
     long CurrentHp,
     long MaxHp,
     string Effect,
-    int Stacks, string SourceClass = "Unknown");
+    int Stacks, string SourceClass = "Unknown", DamageFlags DamageFlags = DamageFlags.None);
 
 
