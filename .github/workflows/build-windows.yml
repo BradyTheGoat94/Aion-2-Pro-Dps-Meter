@@ -3,7 +3,7 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "accuracy-reliability" ]
+    branches: [ "main", "accuracy-reliability", "identity-reports" ]
     paths:
       - "src/**"
       - "tests/**"
@@ -2413,6 +2413,12 @@ jobs:
         run: dotnet restore src/Aion2DPSPro.csproj
       - name: WPF overlay smoke checks
         run: dotnet run --project tests/OverlaySmoke/OverlaySmoke.csproj -c Release
+      - name: Upload report preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: combat-report-preview
+          path: report-preview.png
+          if-no-files-found: error
       - name: Publish Windows x64
         run: dotnet publish src/Aion2DPSPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
       - name: Upload executable

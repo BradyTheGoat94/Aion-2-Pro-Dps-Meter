@@ -20,3 +20,9 @@ Remaining live validation:
 Health distinguishes waiting, idle/disconnected, packets without decoded events, and queue overload. Packets without events can mean idle game traffic or decoder mismatch. Missing TCP bytes are discarded, never bridged into a fake frame. Gap or overload warnings mean the encounter can be incomplete.
 
 Limits: healing is raw decoded healing, not verified effective healing/overheal. Automatic boss lifecycle remains unverified, so long mechanics can exceed the inactivity timeout. Effect sources are separate. Per-encounter recent events are capped at 2,000 and in-memory completed history at 100. Saved aggregates remain available on disk. Observed removal/reconnect conservatively splits entities, so Overall can contain multiple rows for the same character until a verified persistent identity key is available.
+
+## Identity routing and report update
+
+Exact PlayerName/entity mappings from identity-only TCP/13328 conversations are now bridged into the selected combat flow within the same capture adapter, local IP and server IP. Pre-lock identities are replayed when combat is validated. Entries expire after ten minutes and observed primary-flow despawn removes them. No name guessing or cross-server merge is performed. Character lookup using another server IP still requires independent correlation evidence. Identity diagnostics alone are not proof that a live party session is fully resolved.
+
+The dedicated report refreshes every 500ms, can pause, exposes category-specific datasets, and remains tied to the encounter it opened. Skill totals include hit/crit statistics, contribution, min/mean/max and observed hit-flag counts. Target totals are aggregated over the complete accepted encounter rather than inferred from the bounded event feed. Buff/debuff empty states explain unverified live opcodes. The event feed is still bounded to 2,000 encounter events.

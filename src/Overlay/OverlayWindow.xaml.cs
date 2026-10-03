@@ -252,33 +252,12 @@ public partial class OverlayWindow : Window
 
     void OpenSelectedReport(object sender, RoutedEventArgs e)
     {
-        if (last is null || Rows.SelectedItem is not Row r) return;
-        var w = new Window { Title=$"{r.Name} — Combat Report", Width=760, Height=560, Owner=this,
-            WindowStartupLocation=WindowStartupLocation.CenterOwner, Background=Brush("#0A0E16"), Foreground=Brush("#F4F7FF") };
-        var root = new System.Windows.Controls.Grid { Margin=new Thickness(18) };
-        root.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height=GridLength.Auto });
-        root.RowDefinitions.Add(new System.Windows.Controls.RowDefinition());
-        var head = new System.Windows.Controls.StackPanel();
-        head.Children.Add(new System.Windows.Controls.TextBlock { Text=r.Name, FontSize=26, FontWeight=FontWeights.Bold, Foreground=r.Brush });
-        head.Children.Add(new System.Windows.Controls.TextBlock { Text=$"{r.ClassName}   •   {r.Stats.Dps:N0} DPS   •   {r.Stats.Damage:N0} damage   •   {r.Stats.Share:0.0}% share   •   {r.Stats.CritPercent:0.0}% crit", Foreground=Brush("#AFC9EF"), Margin=new Thickness(0,3,0,14) });
-        root.Children.Add(head);
-        var tabs = new System.Windows.Controls.TabControl { Margin=new Thickness(0,4,0,0) };
-        System.Windows.Controls.Grid.SetRow(tabs,1);
-        var skillsTab = new System.Windows.Controls.TabItem { Header="Skills" };
-        var skillGrid = new System.Windows.Controls.DataGrid { IsReadOnly=true, AutoGenerateColumns=false, Background=Brush("#101827"), Foreground=Brush("#F4F7FF"), BorderThickness=new Thickness(0) };
-        skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="Skill", Binding=new System.Windows.Data.Binding("Name"), Width=new System.Windows.Controls.DataGridLength(1,System.Windows.Controls.DataGridLengthUnitType.Star) });
-        skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="Damage", Binding=new System.Windows.Data.Binding("Damage"){StringFormat="N0"}, Width=120 });
-        skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="Hits", Binding=new System.Windows.Data.Binding("Hits"), Width=80 });
-        skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="DPS", Binding=new System.Windows.Data.Binding("Dps"){StringFormat="N0"}, Width=100 });
-        foreach(var field in new[]{"CritPercent","Share","Average","MinHit","MaxHit"}) skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn {Header=field,Binding=new System.Windows.Data.Binding(field){StringFormat="N1"},Width=100});
-        skillGrid.ItemsSource=last.Skills.Where(x=>x.ActorId==r.Stats.ActorId).ToArray(); skillsTab.Content=skillGrid; tabs.Items.Add(skillsTab);
-        var eventsTab = new System.Windows.Controls.TabItem { Header="Recent Events" };
-        var events = new System.Windows.Controls.ListBox { Background=Brush("#101827"), Foreground=Brush("#DDE9FF"), FontFamily=new FontFamily("Consolas") };
-        events.ItemsSource=last.RecentEvents.Where(x=>x.SourceId==r.Stats.ActorId || x.TargetId==r.Stats.ActorId).Reverse().Select(x=>$"{x.Utc:HH:mm:ss.fff}  {x.Skill,-28} {x.Amount,10:N0}  {x.DamageType}  {x.DamageFlags}");
-        eventsTab.Content=events; tabs.Items.Add(eventsTab);
-        var buffTab=new System.Windows.Controls.TabItem {Header="Buffs / Debuffs"};
-        buffTab.Content=new System.Windows.Controls.DataGrid {IsReadOnly=true,ItemsSource=last.Buffs.Where(x=>x.TargetId==r.Stats.ActorId).ToArray()}; tabs.Items.Add(buffTab);
-        root.Children.Add(tabs); w.Content=root; w.Show();
+        if(last is null || Rows.SelectedItem is not Row r)return;
+        var segment=(MeterSegment)Math.Clamp(Segment.SelectedIndex,0,2);
+        var frozen=Engine?.Snapshot(segment,MeterCategory.Damage,true)??last;
+        Func<MeterSnapshot> provider=()=>Engine is null?frozen:segment==MeterSegment.Overall?Engine.Snapshot(segment,MeterCategory.Damage,true):Engine.SnapshotEncounter(frozen.EncounterId)??frozen;
+        var report=new CombatReportWindow(provider,r.Stats.ActorId,(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7)) {Owner=this};
+        report.Show();
     }
     void CloseOverlay(object s,RoutedEventArgs e)=>Hide();
     void Drag(object s,MouseButtonEventArgs e){if(e.LeftButton==MouseButtonState.Pressed)DragMove();}

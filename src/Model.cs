@@ -14,15 +14,20 @@ public sealed record CombatEvent(DateTime Utc, CombatKind Kind, long SourceId = 
 public sealed record PlayerStats(string Name, string ClassName, long Damage, double Dps, double Share, long Hits, double CritPercent,
     long ActorId = 0, double ActiveDps = 0, long EntityId = 0);
 public sealed record SkillStats(string Name, long Damage, long Hits, double Dps, long ActorId = 0, long Crits = 0,
-    double CritPercent = 0, double Share = 0, double Average = 0, long MinHit = 0, long MaxHit = 0, DamageFlags Flags = DamageFlags.None);
+    double CritPercent = 0, double Share = 0, double Average = 0, long MinHit = 0, long MaxHit = 0, DamageFlags Flags = DamageFlags.None)
+{
+    public IReadOnlyDictionary<DamageFlags,long> FlagHits {get;init;} = new Dictionary<DamageFlags,long>();
+}
 public sealed record BuffStats(string Name, double Uptime, int MaxStacks, long SourceId = 0, long TargetId = 0, bool IsDebuff = false, double ActiveSeconds = 0);
 public sealed record TargetStats(string Name, long CurrentHp, long MaxHp, double Percent, long DamageTaken);
+public sealed record ActorTargetStats(long ActorId,long TargetId,string Name,long Damage,double Share);
 public sealed record CategorySnapshot(IReadOnlyList<PlayerStats> Players,IReadOnlyList<SkillStats> Skills,string MetricLabel);
 public sealed record MeterSnapshot(bool InFight, bool PreviewMode, double FightSeconds, long FightDamage, double FightDps,
     long OverallDamage, double OverallDps, TargetStats? Target, IReadOnlyList<PlayerStats> Players,
     IReadOnlyList<SkillStats> Skills, IReadOnlyList<BuffStats> Buffs, IReadOnlyList<CombatEvent> RecentEvents)
 {
     public IReadOnlyDictionary<MeterCategory,CategorySnapshot> Categories {get;init;} = new Dictionary<MeterCategory,CategorySnapshot>();
+    public IReadOnlyList<ActorTargetStats> Targets {get;init;} = Array.Empty<ActorTargetStats>();
     public Guid EncounterId { get; init; }
     public DateTime? StartedUtc { get; init; }
     public string EndReason { get; init; } = "";

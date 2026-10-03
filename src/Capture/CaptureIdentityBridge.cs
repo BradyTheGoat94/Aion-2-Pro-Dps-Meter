@@ -1,0 +1,34 @@
+namespace Aion2DPSPro.Capture;
+
+/// <summary>Shares exact observed entity identities only within one adapter/local-IP/server-IP scope.</summary>
+public sealed class CaptureIdentityBridge
+{
+    private sealed record Entry(CombatEvent Event, DateTime Seen);
+    private readonly Dictionary<(string Scope,long Id),Entry> names=new();
+    public void Observe(string scope,CombatEvent e)
+    {
+        Prune(e.Utc);
+        if(e.Kind==CombatKind.Despawn) {names.Remove((scope,e.SourceId));return;}
+        if(e.Kind!=CombatKind.PlayerName || e.SourceId<=0 || string.IsNullOrWhiteSpace(e.Source) || e.Source.StartsWith("Actor "))return;
+        names[(scope,e.SourceId)]=new(e,e.Utc);
+        if(names.Count>4096)names.Remove(names.MinBy(x=>x.Value.Seen).Key);
+    }
+    public IReadOnlyList<CombatEvent> Identities(string scope,DateTime utc)
+    {
+        Prune(utc);
+        return names.Where(x=>x.Key.Scope==scope).Select(x=>x.Value.Event with {Utc=utc}).ToArray();
+    }
+    public CombatEvent Resolve(string scope,CombatEvent e)
+    {
+        Prune(e.Utc);
+        if(e.SourceId!=0 && names.TryGetValue((scope,e.SourceId),out var source))
+            e=e with {Source=source.Event.Source,SourceClass=e.SourceClass=="Unknown"?source.Event.SourceClass:e.SourceClass};
+        if(e.TargetId!=0 && names.TryGetValue((scope,e.TargetId),out var target))e=e with {Target=target.Event.Source};
+        return e;
+    }
+    private void Prune(DateTime utc)
+    {
+        foreach(var key in names.Where(x=>utc-x.Value.Seen>TimeSpan.FromMinutes(10)).Select(x=>x.Key).ToArray())names.Remove(key);
+    }
+    public void Clear()=>names.Clear();
+}

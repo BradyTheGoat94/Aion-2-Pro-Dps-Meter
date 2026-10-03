@@ -1,0 +1,60 @@
+<Window x:Class="Aion2DPSPro.Overlay.CombatReportWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Combat report" Width="1180" Height="820" MinWidth="980" MinHeight="680" Background="#080D18" Foreground="#E6EEF9"
+ WindowStartupLocation="CenterOwner" FontFamily="Segoe UI" UseLayoutRounding="True">
+ <Window.Resources>
+  <SolidColorBrush x:Key="Text" Color="#E6EEF9"/>
+  <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource Text}"/></Style>
+  <Style x:Key="Muted" TargetType="TextBlock"><Setter Property="Foreground" Value="#899AB6"/><Setter Property="FontSize" Value="12"/></Style>
+  <Style x:Key="Card" TargetType="Border"><Setter Property="Background" Value="#111C30"/><Setter Property="BorderBrush" Value="#23314B"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="16,12"/><Setter Property="Margin" Value="0,0,10,0"/></Style>
+  <Style TargetType="DataGrid">
+   <Setter Property="Background" Value="#0D1626"/><Setter Property="Foreground" Value="#E6EEF9"/><Setter Property="BorderThickness" Value="0"/>
+   <Setter Property="RowBackground" Value="#0D1626"/><Setter Property="AlternatingRowBackground" Value="#111D30"/><Setter Property="AlternationCount" Value="2"/>
+   <Setter Property="GridLinesVisibility" Value="None"/><Setter Property="HeadersVisibility" Value="Column"/><Setter Property="RowHeight" Value="46"/>
+   <Setter Property="ColumnHeaderHeight" Value="40"/><Setter Property="IsReadOnly" Value="True"/><Setter Property="AutoGenerateColumns" Value="False"/>
+   <Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/><Setter Property="CanUserReorderColumns" Value="False"/>
+   <Setter Property="SelectionMode" Value="Single"/>
+  </Style>
+  <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#16233A"/><Setter Property="Foreground" Value="#93ACCE"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,0"/><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  <Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,5"/><Setter Property="VerticalContentAlignment" Value="Center"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#203E5A"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></Style.Triggers></Style>
+  <Style TargetType="TabItem">
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem"><Border x:Name="Pill" Background="#142039" CornerRadius="7" Padding="18,10" Margin="0,0,8,8"><ContentPresenter ContentSource="Header"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Pill" Property="Background" Value="#185F79"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Setter Property="Foreground" Value="#A8BCD9"/>
+  </Style>
+  <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#A8BCD9"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
+ </Window.Resources>
+ <Grid Margin="24">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid Margin="0,0,0,18"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Border x:Name="ClassBadge" Width="62" Height="62" CornerRadius="16" Background="#132D46" Margin="0,0,16,0"><TextBlock Text="A2" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="24"/></Border>
+   <StackPanel Grid.Column="1"><TextBlock Text="COMBAT ANALYSIS" Foreground="#48C9D8" FontSize="11" FontWeight="Bold"/><TextBlock x:Name="PlayerName" Text="Player" FontWeight="Bold" FontSize="30" Margin="0,2,0,1"/><TextBlock x:Name="PlayerContext" Style="{StaticResource Muted}"/></StackPanel>
+   <StackPanel Grid.Column="2" HorizontalAlignment="Right"><Border Background="#132C3B" CornerRadius="6" Padding="10,5"><TextBlock x:Name="LiveState" Text="LIVE" Foreground="#5DE0C8" FontSize="11" FontWeight="Bold"/></Border><TextBlock x:Name="FightContext" Style="{StaticResource Muted}" Margin="0,10,0,0" HorizontalAlignment="Right"/></StackPanel>
+  </Grid>
+  <Border Grid.Row="1" Background="#101A2D" CornerRadius="9" Padding="14,10" Margin="0,0,0,14">
+   <DockPanel><TextBlock Text="VIEW" Foreground="#899AB6" VerticalAlignment="Center" Margin="0,0,12,0"/><ComboBox x:Name="Category" Width="170" Height="30" Background="#DCE8F5" Foreground="#13233A" SelectedIndex="0" SelectionChanged="CategoryChanged"/><CheckBox x:Name="Pause" DockPanel.Dock="Right" Content="Pause live refresh" Margin="20,0,0,0" Checked="PauseChanged" Unchecked="PauseChanged"/><TextBlock x:Name="TargetContext" Foreground="#A8BCD9" VerticalAlignment="Center" Margin="20,0,0,0" TextTrimming="CharacterEllipsis"/></DockPanel>
+  </Border>
+  <UniformGrid Grid.Row="2" Columns="6" Margin="0,0,-10,16">
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock x:Name="AmountLabel" Text="TOTAL DAMAGE" Style="{StaticResource Muted}"/><TextBlock x:Name="AmountValue" FontSize="25" FontWeight="Bold" Margin="0,6,0,0"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock x:Name="RateLabel" Text="ENCOUNTER DPS" Style="{StaticResource Muted}"/><TextBlock x:Name="RateValue" FontSize="25" FontWeight="Bold" Foreground="#48C9D8" Margin="0,6,0,0"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="GROUP SHARE" Style="{StaticResource Muted}"/><TextBlock x:Name="ShareValue" FontSize="25" FontWeight="Bold" Margin="0,6,0,0"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="HITS / EVENTS" Style="{StaticResource Muted}"/><TextBlock x:Name="HitsValue" FontSize="25" FontWeight="Bold" Margin="0,6,0,0"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="CRITICAL HITS" Style="{StaticResource Muted}"/><TextBlock x:Name="CritValue" FontSize="25" FontWeight="Bold" Foreground="#FF788C" Margin="0,6,0,0"/></StackPanel></Border>
+   <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="ACTIVE RATE*" Style="{StaticResource Muted}"/><TextBlock x:Name="ActiveValue" FontSize="25" FontWeight="Bold" Margin="0,6,0,0"/></StackPanel></Border>
+  </UniformGrid>
+  <TextBlock x:Name="Overview" Grid.Row="3" Foreground="#93ACCE" Margin="0,0,0,16" TextWrapping="Wrap"/>
+  <TabControl Grid.Row="4" Background="Transparent" BorderThickness="0" Padding="0">
+   <TabItem Header="Skill breakdown"><Grid><DataGrid x:Name="SkillGrid">
+    <DataGrid.Columns>
+     <DataGridTemplateColumn Header="SKILL / CONTRIBUTION" Width="230"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" FontWeight="SemiBold"/><ProgressBar Value="{Binding Share}" Maximum="100" Height="3" Margin="0,6,12,0" Foreground="#48C9D8" Background="#23314B"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+     <DataGridTextColumn Header="TOTAL" Binding="{Binding Damage, StringFormat=N0}" Width="110"/><DataGridTextColumn Header="RATE" Binding="{Binding Dps, StringFormat=N1}" Width="90"/>
+     <DataGridTextColumn Header="SHARE %" Binding="{Binding Share, StringFormat=N1}" Width="80"/><DataGridTextColumn Header="HITS" Binding="{Binding Hits}" Width="70"/><DataGridTextColumn Header="CRITS" Binding="{Binding Crits}" Width="70"/><DataGridTextColumn Header="CRIT %" Binding="{Binding CritPercent, StringFormat=N1}" Width="80"/>
+     <DataGridTextColumn Header="AVERAGE" Binding="{Binding Average, StringFormat=N1}" Width="100"/><DataGridTextColumn Header="MIN" Binding="{Binding MinHit, StringFormat=N0}" Width="85"/><DataGridTextColumn Header="MAX" Binding="{Binding MaxHit, StringFormat=N0}" Width="85"/>
+     <DataGridTextColumn Header="PERFECT" Binding="{Binding Perfect}" Width="80"/><DataGridTextColumn Header="BACK" Binding="{Binding Back}" Width="70"/><DataGridTextColumn Header="FRONT" Binding="{Binding Front}" Width="70"/><DataGridTextColumn Header="DOUBLE" Binding="{Binding Double}" Width="80"/><DataGridTextColumn Header="PARRY" Binding="{Binding Parry}" Width="70"/><DataGridTextColumn Header="MULTI" Binding="{Binding Multi}" Width="70"/>
+    </DataGrid.Columns>
+   </DataGrid><TextBlock x:Name="SkillEmpty" Text="No events for this player in the selected category." Foreground="#899AB6" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid></TabItem>
+   <TabItem Header="Targets"><Grid><DataGrid x:Name="TargetGrid"><DataGrid.Columns><DataGridTextColumn Header="TARGET" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="DAMAGE" Binding="{Binding Damage, StringFormat=N0}" Width="180"/><DataGridTextColumn Header="SHARE %" Binding="{Binding Share, StringFormat=N1}" Width="140"/></DataGrid.Columns></DataGrid><TextBlock x:Name="TargetEmpty" Text="No damage targets recorded for this player." Foreground="#899AB6" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid></TabItem>
+   <TabItem Header="Buffs &amp; debuffs"><Grid><DataGrid x:Name="EffectGrid"><DataGrid.Columns><DataGridTextColumn Header="EFFECT" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="TYPE" Binding="{Binding Kind}" Width="110"/><DataGridTextColumn Header="SOURCE" Binding="{Binding Source}" Width="160"/><DataGridTextColumn Header="UPTIME %" Binding="{Binding Uptime, StringFormat=N1}" Width="110"/><DataGridTextColumn Header="SECONDS" Binding="{Binding ActiveSeconds, StringFormat=N1}" Width="110"/><DataGridTextColumn Header="MAX STACKS" Binding="{Binding MaxStacks}" Width="110"/></DataGrid.Columns></DataGrid><TextBlock x:Name="EffectEmpty" Text="No effect events captured. Live buff/debuff opcodes remain unverified." TextWrapping="Wrap" Foreground="#899AB6" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30"/></Grid></TabItem>
+   <TabItem Header="Event feed"><DataGrid x:Name="EventGrid" RowHeight="34"><DataGrid.Columns><DataGridTextColumn Header="TIME" Binding="{Binding Time}" Width="115"/><DataGridTextColumn Header="DIRECTION" Binding="{Binding Direction}" Width="100"/><DataGridTextColumn Header="KIND" Binding="{Binding Kind}" Width="110"/><DataGridTextColumn Header="SKILL / EFFECT" Binding="{Binding Skill}" Width="*"/><DataGridTextColumn Header="AMOUNT" Binding="{Binding Amount, StringFormat=N0}" Width="115"/><DataGridTextColumn Header="FLAGS" Binding="{Binding Flags}" Width="180"/></DataGrid.Columns></DataGrid></TabItem>
+  </TabControl>
+  <TextBlock x:Name="Footnote" Grid.Row="5" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+ </Grid>
+</Window>

@@ -10,6 +10,8 @@ public sealed class LiveCaptureAdapter : IDisposable
 {
     private readonly IAion2Decoder decoder;
     private readonly List<ICaptureDevice> devices=new();
+    private readonly CaptureIdentityBridge identityBridge=new();
+    private string? lockedScope;
     private readonly TcpStreamReassembler reassembler=new();
     private readonly BlockingCollection<Action> queue=new(4096);
     private readonly Task worker;
@@ -66,7 +68,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     }
     private void ResetConnection()
     {
-        lockedDevice=null; lockedConversation=null; selectedDecoder=null; reassembler.Reset(); candidates.Clear();
+        lockedDevice=null; lockedConversation=null; lockedScope=null; selectedDecoder=null; reassembler.Reset(); candidates.Clear(); identityBridge.Clear();
         if(decoder is CurrentClientDecoder c) c.ResetConnection();
         ConnectionReset?.Invoke(); StatusChanged?.Invoke("Connection reset; searching for validated game traffic.");
     }
@@ -77,44 +79,54 @@ public sealed class LiveCaptureAdapter : IDisposable
         string source=$"{ip.SourceAddress}:{tcp.SourcePort}",destination=$"{ip.DestinationAddress}:{tcp.DestinationPort}";
         string conversation=string.CompareOrdinal(source,destination)<=0?$"{source}<>{destination}":$"{destination}<>{source}";
         string direction=$"{device}|{source}>{destination}";
+        var server=tcp.SourcePort==13328?ip.SourceAddress:ip.DestinationAddress;
+        var local=tcp.SourcePort==13328?ip.DestinationAddress:ip.SourceAddress;
+        string scope=$"{device}|{local}|{server}";
         if(lockedConversation!=null && utc-lastPayload>TimeSpan.FromSeconds(30)) ResetConnection();
-        if(lockedConversation!=null && (lockedConversation!=conversation || lockedDevice!=device)) return;
+        if(lockedScope!=null && scope!=lockedScope) return;
+        bool primary=lockedConversation==conversation && lockedDevice==device;
+        string candidateKey=device+conversation;
         if(tcp.Synchronize || tcp.Finished || tcp.Reset)
         {
-            if(lockedConversation==conversation) ResetConnection();
-            else { candidates.Remove(device+conversation); reassembler.Remove(direction); }
-            if(tcp.Finished || tcp.Reset) return;
+            if(primary) {ResetConnection();primary=false;}
+            else {candidates.Remove(candidateKey);reassembler.Remove(direction);}
+            if(tcp.Finished || tcp.Reset)return;
         }
-        if(tcp.PayloadData is not {Length:>0}) return;
+        if(tcp.PayloadData is not {Length:>0})return;
         PacketCaptured?.Invoke();
-        IAion2Decoder active=selectedDecoder??decoder;
-        if(lockedConversation==null && decoder is CurrentClientDecoder baseDecoder)
+        IAion2Decoder active=primary?selectedDecoder??decoder:decoder;
+        if(!primary && decoder is CurrentClientDecoder baseDecoder)
         {
-            string key=device+conversation;
-            if(!candidates.TryGetValue(key,out var candidate))
+            if(!candidates.TryGetValue(candidateKey,out var candidate))
             {
-                if(candidates.Count>=8) candidates.Remove(candidates.MinBy(x=>x.Value.Seen).Key);
+                if(candidates.Count>=8)candidates.Remove(candidates.MinBy(x=>x.Value.Seen).Key);
                 candidate=(baseDecoder.CreateSibling(),utc);
             }
-            candidates[key]=(candidate.Decoder,utc); active=candidate.Decoder;
+            candidates[candidateKey]=(candidate.Decoder,utc);active=candidate.Decoder;
         }
-        if(lockedConversation!=null)lastPayload=utc;
+        if(primary)lastPayload=utc;
         var chunks=reassembler.Push(direction,unchecked(tcp.SequenceNumber+(tcp.Synchronize?1u:0u)),tcp.PayloadData,utc);
-        if(chunks.Count==0) return;
-        var decoded=new List<Aion2Decoded>();
-        foreach(var chunk in chunks) decoded.AddRange(active is CurrentClientDecoder c?c.DecodeStream(direction,chunk,utc):active.Decode(chunk,utc));
+        if(chunks.Count==0)return;
+        var decoded=new List<CombatEvent>();
+        foreach(var chunk in chunks)
+        foreach(var d in active is CurrentClientDecoder c?c.DecodeStream(direction,chunk,utc):active.Decode(chunk,utc))
+            decoded.Add(new(utc,d.Kind,d.SourceId,d.Source,d.TargetId,d.Target,d.Skill,d.Amount,d.DamageType,d.CurrentHp,d.MaxHp,d.Effect,d.Stacks,d.SourceClass,d.DamageFlags));
+        foreach(var e in decoded.Where(x=>x.Kind==CombatKind.PlayerName || primary&&x.Kind==CombatKind.Despawn))identityBridge.Observe(scope,e);
         if(lockedConversation==null)
         {
-            if(!decoded.Any(x=>(x.Kind is CombatKind.Damage or CombatKind.Heal) && x.Amount>0)) return;
-            lockedDevice=device; lockedConversation=conversation;
-            // Continue with the candidate decoder that has already accumulated frame/identity state.
-            selectedDecoder=active;
-            foreach(var key in candidates.Keys.Where(x=>x!=device+conversation).ToArray()) candidates.Remove(key);
+            if(!decoded.Any(x=>(x.Kind is CombatKind.Damage or CombatKind.Heal)&&x.Amount>0))return;
+            lockedDevice=device;lockedConversation=conversation;lockedScope=scope;selectedDecoder=active;primary=true;
+            // Publish identities captured before combat lock, including identity-only sibling connections.
+            foreach(var identity in identityBridge.Identities(scope,utc))EventReceived?.Invoke(identity);
             FlowLocked?.Invoke($"{device} | {conversation}");
         }
-        lastPayload=utc;
-        if(decoded.Count>0) lastEvent=utc;
-        foreach(var d in decoded) EventReceived?.Invoke(new(utc,d.Kind,d.SourceId,d.Source,d.TargetId,d.Target,d.Skill,d.Amount,d.DamageType,d.CurrentHp,d.MaxHp,d.Effect,d.Stacks,d.SourceClass,d.DamageFlags));
+        if(!primary)
+        {
+            foreach(var identity in decoded.Where(x=>x.Kind==CombatKind.PlayerName))EventReceived?.Invoke(identity);
+            return;
+        }
+        lastPayload=utc;if(decoded.Count>0)lastEvent=utc;
+        foreach(var e in decoded)EventReceived?.Invoke(identityBridge.Resolve(scope,e));
     }
     private IAion2Decoder? selectedDecoder;
     public void Dispose()
