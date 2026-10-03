@@ -2005,6 +2005,42 @@ jobs:
             throw "Global/session identity link patch failed"
           }
 
+      - name: Add identity lifecycle census
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $d = Get-Content $p -Raw
+          if ($d -notmatch 'TraceIdentityLifecycle') {
+            $helper = @(
+              '    private void TraceIdentityLifecycle(ReadOnlySpan<byte> d, DateTime utc)',
+              '    {',
+              '        if (d.Length < 4) return;',
+              '        int p = 0;',
+              '        if (!ReadV(d, ref p, out _, out _)) return;',
+              '        if (p + 1 >= d.Length) return;',
+              '        byte a = d[p], b = d[p + 1];',
+              '        bool interesting = (b == 0x36 && (a == 0x20 || a == 0x33 || a == 0x41 || a == 0x45 || a == 0x49)) ||',
+              '                           (b == 0x97 && (a == 0x01 || a == 0x02 || a == 0x0B || a == 0x1D));',
+              '        if (!interesting) return;',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=identityLifecycle|opcode={a:X2}{b:X2}|frameLen={d.Length}|raw={Convert.ToHexString(d)}");',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $d.Contains($readAnchor)) { throw "ReadV anchor missing for identity lifecycle census" }
+            $d = $d.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+          if ($d -notmatch 'TraceIdentityLifecycle\(frame, utc\)') {
+            $dispatchAnchor = '        TraceGlobalSessionCandidates(frame, utc);'
+            if (-not $d.Contains($dispatchAnchor)) { throw "Global/session tracer anchor missing for lifecycle census" }
+            $d = $d.Replace($dispatchAnchor, '        TraceIdentityLifecycle(frame, utc);' + [Environment]::NewLine + $dispatchAnchor)
+          }
+          Set-Content $p $d
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'tag=identityLifecycle' -or $v -notmatch 'TraceIdentityLifecycle\(frame, utc\)') {
+            throw "Identity lifecycle census patch failed"
+          }
+
       - name: Add public AION 2 game data catalog
         shell: pwsh
         run: |
