@@ -2016,7 +2016,7 @@ jobs:
               '    {',
               '        if (d.Length < 4) return;',
               '        int p = 0;',
-              '        if (!ReadV(d, ref p, out _, out _)) return;',
+              '        if (!ReadV(d, ref p, out _)) return;',
               '        if (p + 1 >= d.Length) return;',
               '        byte a = d[p], b = d[p + 1];',
               '        bool interesting = (b == 0x36 && (a == 0x20 || a == 0x33 || a == 0x41 || a == 0x45 || a == 0x49)) ||',
