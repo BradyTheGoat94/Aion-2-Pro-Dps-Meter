@@ -734,6 +734,29 @@ jobs:
             throw "Candidate tracer verification failed"
           }
 
+      - name: Correct damage amount field
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # The current parser consumes one post-trailer varint and then calls the
+          # next one damage. Validation shows that value is stable per actor and
+          # the following varint is the varying hit amount, so advance once more.
+          $pattern = 'if\s*\(\s*!ReadV\(d,\s*ref\s+p,\s*out\s+_\)\s*\)\s*return\s+null\s*;\s*if\s*\(\s*!ReadV\(d,\s*ref\s+p,\s*out\s+var\s+damage\)\s*\|\|\s*damage\s*==\s*0\s*\|\|\s*damage\s*>\s*9_000_000_000UL\s*\)\s*return\s+null\s*;'
+          $replacement = 'if (!ReadV(d, ref p, out _)) return null;' + [Environment]::NewLine + '        if (!ReadV(d, ref p, out _)) return null;' + [Environment]::NewLine + '        if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;'
+          $updated = [regex]::Replace($s, $pattern, $replacement, 1)
+
+          if ($updated -eq $s -and $s -notmatch 'if \(!ReadV\(d, ref p, out _\)\) return null;\s*if \(!ReadV\(d, ref p, out _\)\) return null;\s*if \(!ReadV\(d, ref p, out var damage\)') {
+            throw "Could not locate damage amount read sequence"
+          }
+
+          Set-Content $p $updated
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'if \(!ReadV\(d, ref p, out _\)\) return null;\s*if \(!ReadV\(d, ref p, out _\)\) return null;\s*if \(!ReadV\(d, ref p, out var damage\)') {
+            throw "Damage amount field correction verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
