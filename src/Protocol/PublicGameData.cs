@@ -2060,6 +2060,10 @@ internal static class PublicGameData
         ["라이칸 변신 캔디"] = "Mau Transformation Candy",
         ["아울라우 변신 캔디"] = "Aullaeu Transformation Candy",
         ["무무 변신 캔디"] = "Mumu Transformation Candy",
+        ["바람의 정령: 기본 공격"] = "Wind Spirit: Basic Attack",
+        ["불의 정령: 기본 공격"] = "Fire Spirit: Basic Attack",
+        ["물의 정령: 기본 공격"] = "Water Spirit: Basic Attack",
+        ["땅의 정령: 기본 공격"] = "Earth Spirit: Basic Attack",
         ["펫 변신"] = "Pet Transformation",
     };
 
