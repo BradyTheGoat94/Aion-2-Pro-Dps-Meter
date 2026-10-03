@@ -1618,15 +1618,7 @@ jobs:
             '                level = d[afterName+4] | (d[afterName+5] << 8) | (d[afterName+6] << 16) | (d[afterName+7] << 24);',
             '                if (level >= 1 && level <= 55)',
             '                {',
-            '                    if (jobCode >= 5 && jobCode <= 8) className = "Gladiator";',
-            '                    else if (jobCode >= 9 && jobCode <= 12) className = "Templar";',
-            '                    else if (jobCode >= 13 && jobCode <= 16) className = "Ranger";',
-            '                    else if (jobCode >= 17 && jobCode <= 20) className = "Assassin";',
-            '                    else if (jobCode >= 21 && jobCode <= 24) className = "Spiritmaster";',
-            '                    else if (jobCode >= 25 && jobCode <= 28) className = "Sorcerer";',
-            '                    else if (jobCode >= 29 && jobCode <= 32) className = "Cleric";',
-            '                    else if (jobCode >= 33 && jobCode <= 36) className = "Chanter";',
-            '                    else if (jobCode >= 37 && jobCode <= 40) className = "Fist";',
+            '                    className = jobCode switch { 11 => "Gladiator", 12 => "Templar", 13 => "Assassin", 14 => "Ranger", 15 => "Sorcerer", 16 => "Spiritmaster", 17 => "Cleric", 18 => "Chanter", _ => "Unknown" };',
             '                }',
             '            }'
           ) -join [Environment]::NewLine
@@ -1661,6 +1653,30 @@ jobs:
           $verifyCap = Get-Content $cap -Raw
           $verifyDecoded = Get-Content $decoded -Raw
           if ($verify -notmatch 'jobCode=\{jobCode\}' -or $verify -notmatch 'new PlayerIdentity\(name, className\)' -or $verifyCap -notmatch 'd.SourceClass' -or $verifyDecoded -notmatch 'SourceClass') { throw "Party class decode patch failed" }
+
+      - name: Infer class from validated AION 2 skill family
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+          if ($s -notmatch 'ClassFromSkill') {
+            $helper = @(
+              '    private static string ClassFromSkill(int skill)',
+              '    {',
+              '        int family = Math.Abs(skill) / 1000000;',
+              '        return family switch { 11 => "Gladiator", 12 => "Templar", 13 => "Assassin", 14 => "Ranger", 15 => "Sorcerer", 16 => "Spiritmaster", 17 => "Cleric", 18 => "Chanter", _ => "Unknown" };',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for skill class inference" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+          $s = [regex]::Replace($s, '(return new\(CombatKind\.Damage,[\s\S]*?0,0,"",0)(\);)', '$1, ClassFromSkill(skill)$2', 1)
+          $s = [regex]::Replace($s, '(return new\(damage>0\?CombatKind\.Damage:CombatKind\.Heal,[\s\S]*?DamageType\.Dot,0,0,"",0)(\);)', '$1, ClassFromSkill((int)skill)$2', 1)
+          Set-Content $p $s
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
