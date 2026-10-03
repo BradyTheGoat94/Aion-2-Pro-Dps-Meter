@@ -63,7 +63,6 @@ public sealed class LiveCaptureAdapter : IDisposable
         var utc=DateTime.UtcNow;
         try { if(!queue.TryAdd(()=>Process(device,Packet.ParsePacket(link,bytes),utc))) Interlocked.Increment(ref dropped); }
         catch(InvalidOperationException) { }
-        catch(ObjectDisposedException) { }
     }
     private void ResetConnection()
     {
