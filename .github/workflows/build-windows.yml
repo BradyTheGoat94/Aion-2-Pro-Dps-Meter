@@ -1107,6 +1107,77 @@ jobs:
             throw "Entity bridge tracer verification failed"
           }
 
+      - name: Parse structured identity character names
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          if ($s -notmatch 'TryReadStructuredCharacterName') {
+            $helperLines = @(
+              '    private static bool TryReadStructuredCharacterName(ReadOnlySpan<byte> d, int start, out string name, out int offset)',
+              '    {',
+              '        name = "";',
+              '        offset = -1;',
+              '        int end = Math.Min(d.Length - 2, start + 96);',
+              '        for (int i = Math.Max(0, start); i < end; i++)',
+              '        {',
+              '            if (d[i] != 0x07) continue;',
+              '            int len = d[i + 1];',
+              '            if (len < 3 || len > 24 || i + 2 + len > d.Length) continue;',
+              '            var bytes = d.Slice(i + 2, len);',
+              '            bool valid = true;',
+              '            for (int j = 0; j < bytes.Length; j++)',
+              '            {',
+              '                byte b = bytes[j];',
+              '                if (!((b >= (byte)''A'' && b <= (byte)''Z'') ||',
+              '                      (b >= (byte)''a'' && b <= (byte)''z'') ||',
+              '                      (b >= (byte)''0'' && b <= (byte)''9'') ||',
+              '                      b == (byte)''_'' || b == (byte)''-'')) { valid = false; break; }',
+              '            }',
+              '            if (!valid) continue;',
+              '            name = System.Text.Encoding.UTF8.GetString(bytes);',
+              '            offset = i;',
+              '            return true;',
+              '        }',
+              '        return false;',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for structured-name helper" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          # Replace the old broad printable scan inside ObserveIdentity.
+          $pattern = '(?s)        string\? best = null;\s*        for \(int i = p; i < d\.Length; i\+\+\)\s*        \{.*?        \}\s*        if \(string\.IsNullOrWhiteSpace\(best\) \|\| best\.Length < 3\)'
+          $replacement = @(
+            '        string? best = null;',
+            '        int nameOffset = -1;',
+            '        if (TryReadStructuredCharacterName(d, start, out var structuredName, out nameOffset))',
+            '            best = structuredName;',
+            '        if (string.IsNullOrWhiteSpace(best) || best.Length < 3)'
+          ) -join [Environment]::NewLine
+          $updated = [regex]::Replace($s, $pattern, $replacement, 1)
+          if ($updated -eq $s -and $s -notmatch 'TryReadStructuredCharacterName\(d, start, out var structuredName') {
+            throw "ObserveIdentity printable-scan anchor not found"
+          }
+          $s = $updated
+
+          # Put the structural name offset in validation records for correlation.
+          $old = '|name={best}|idCandidates={idCandidates}|bridgeFields='
+          $new = '|name={best}|nameOffset={nameOffset}|idCandidates={idCandidates}|bridgeFields='
+          if ($s.Contains($old)) { $s = $s.Replace($old, $new) }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'TryReadStructuredCharacterName' -or
+              $verify -notmatch 'nameOffset=' -or
+              $verify -match 'text\.All\(ch =>') {
+            throw "Structured identity-name patch verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
