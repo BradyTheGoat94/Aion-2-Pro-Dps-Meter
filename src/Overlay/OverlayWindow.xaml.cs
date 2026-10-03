@@ -19,7 +19,7 @@ public partial class OverlayWindow : Window
     string currentStyle = "Classic Dashboard";
     bool clickThrough;
     bool showDetails = true;
-    public OverlayWindow() { InitializeComponent(); ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); }
+    public OverlayWindow() { InitializeComponent(); CategoryPicker.ItemsSource=new[]{"Damage","Healing","Damage Taken","Deaths","Buffs","Debuffs","Interrupts","Dispels"}; CategoryPicker.SelectedIndex=0; ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); }
     static readonly Dictionary<string,string> Colors = new(StringComparer.OrdinalIgnoreCase) {
         ["Gladiator"]="#E65353", ["Templar"]="#E8903D", ["Assassin"]="#C45CFF", ["Ranger"]="#F2C94C",
         ["Sorcerer"]="#4DA3FF", ["Spiritmaster"]="#48C9D8", ["Cleric"]="#6DDB72", ["Chanter"]="#D6DCE8", ["Brawler"]="#FF7A45", ["Unknown"]="#AAB6CC" };
@@ -32,7 +32,7 @@ public partial class OverlayWindow : Window
         TargetHp.Text=s.Target is null?"":$"{s.Target.Percent:0.0}%   {F(s.Target.CurrentHp)} / {F(s.Target.MaxHp)}";
         StatusText.Text=s.PreviewMode?"SIMULATED DATA":$"{(s.InFight?"CURRENT":"COMPLETED")} • PROTOCOL UNVERIFIED";
         var max=Math.Max(1,s.Players.FirstOrDefault()?.Dps??1);
-        Rows.ItemsSource=s.Players.Select((p,i)=>new Row(i+1,p.Name,p.ClassName,F(p.Dps),F(p.Damage),$"{p.Share:0.0}%",Brush(p.ClassName),Math.Max(4,150*p.Dps/max),p)).ToList();
+        Rows.ItemsSource=s.Players.Select((p,i)=>new Row(i+1,p.Name,p.ClassName,F(p.Dps),F(p.Damage),$"{p.Share:0.0}%",Brush(p.ClassName),Math.Max(0,150*p.Dps/max),Math.Clamp(100*p.Dps/max,0,100),p)).ToList();
         Rows.SelectedItem=Rows.Items.Cast<Row>().FirstOrDefault(r=>r.Stats.ActorId==selectedActor);
         UpdateSkills();
     }
@@ -51,6 +51,7 @@ public partial class OverlayWindow : Window
     {
         var w = new Window { Title="AION 2 DPS — Overlay Settings", Width=450, Height=700,
             WindowStartupLocation=WindowStartupLocation.CenterOwner, Owner=this, Background=Brush("#0A0E16"), Foreground=Brush("#F4F7FF"), ResizeMode=ResizeMode.NoResize };
+        w.Resources.MergedDictionaries.Add(Resources);
         var panel = new System.Windows.Controls.StackPanel { Margin=new Thickness(20) };
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="OVERLAY SETTINGS", FontSize=22, FontWeight=FontWeights.Bold, Margin=new Thickness(0,0,0,16) });
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Overlay style", Foreground=Brush("#9DB7DE") });
@@ -119,11 +120,13 @@ public partial class OverlayWindow : Window
     }
 
     static readonly string[] ThemeNames = { "Aion Blue/Red", "Neon Spectrum", "Void Purple", "Emerald Glass", "Solar Flare", "Ice Crystal" };
-    static readonly string[] StyleNames = { "Classic Dashboard", "Bars Only", "Raid Compact", "Glass Cards", "Tournament" };
+    static readonly string[] StyleNames = { "Classic Dashboard", "Details Inspired", "Kagerou Inspired", "Bars Only", "Raid Compact", "Glass Cards", "Tournament" };
 
     void ApplyOverlayStyle(string name)
     {
         currentStyle=name;
+        Rows.ItemTemplate=(DataTemplate)Resources["ClassicRows"];
+        CategoryTabs.Visibility=Visibility.Visible; CategoryPicker.Visibility=Visibility.Collapsed;
         // Full reset: every preset starts from the same known layout.
         Width=780; Height=560; MinWidth=560; MinHeight=380;
         MainGrid.RowDefinitions[0].Height=new GridLength(42);
@@ -149,6 +152,23 @@ public partial class OverlayWindow : Window
 
         switch(name)
         {
+            case "Details Inspired":
+            case "Kagerou Inspired":
+                bool compact=name=="Kagerou Inspired";
+                MinWidth=420; MinHeight=260; Width=compact?500:580; Height=compact?455:390;
+                Rows.ItemTemplate=(DataTemplate)Resources[compact?"KagerouRows":"DetailsRows"];
+                CategoryTabs.Visibility=Visibility.Collapsed; CategoryPicker.Visibility=Visibility.Visible;
+                CategoryPicker.SelectedIndex=Math.Max(0,Tabs.SelectedIndex);
+                MainGrid.RowDefinitions[0].Height=new GridLength(36);
+                MainGrid.RowDefinitions[1].Height=new GridLength(38);
+                MainGrid.RowDefinitions[3].Height=new GridLength(0);
+                FooterBar.Visibility=Visibility.Collapsed; DetailPanel.Visibility=Visibility.Collapsed;
+                ContentGrid.ColumnDefinitions[0].Width=new GridLength(1,GridUnitType.Star);
+                ContentGrid.ColumnDefinitions[1].Width=new GridLength(0);
+                ContentGrid.ColumnDefinitions[2].Width=new GridLength(0);
+                Root.CornerRadius=new CornerRadius(compact?8:2); Root.BorderThickness=new Thickness(1);
+                Rows.BorderThickness=new Thickness(0);
+                break;
             case "Bars Only":
                 Width=540; Height=330; MinWidth=420; MinHeight=240;
                 MainGrid.RowDefinitions[0].Height=new GridLength(34);
@@ -202,6 +222,10 @@ public partial class OverlayWindow : Window
                 Rows.BorderThickness=new Thickness(0,2,0,2);
                 break;
         }
+        if(!showDetails && DetailPanel.Visibility==Visibility.Collapsed) {
+            ContentGrid.ColumnDefinitions[0].Width=new GridLength(1,GridUnitType.Star);
+            ContentGrid.ColumnDefinitions[1].Width=new GridLength(0);ContentGrid.ColumnDefinitions[2].Width=new GridLength(0);
+        }
         ApplyTheme(currentTheme);
     }
     void ApplyTheme(string name)
@@ -217,10 +241,11 @@ public partial class OverlayWindow : Window
         };
         var bg=Brush(p.Item1); var accent=Brush(p.Item2); var secondary=Brush(p.Item3);
         var chrome=Brush(p.Item4); var primaryText=Brush(p.Item5); var hot=Brush(p.Item6); var control=Brush(p.Item7);
+        if(currentStyle=="Kagerou Inspired") {bg=BrushWithOpacity(p.Item1,.62);chrome=BrushWithOpacity(p.Item4,.78);}
         Root.Background=bg; Root.BorderBrush=accent;
         HeaderBar.Background=chrome; HeaderBar.BorderBrush=secondary;
         FooterBar.Background=chrome; FooterBar.BorderBrush=secondary;
-        Rows.Background=BrushWithOpacity(p.Item4, .62); Rows.BorderBrush=secondary;
+        Rows.Background=BrushWithOpacity(p.Item4,currentStyle=="Kagerou Inspired"?.15:.62); Rows.BorderBrush=secondary;
         DetailPanel.Background=BrushWithOpacity(p.Item4, .72); DetailPanel.BorderBrush=secondary;
         TitleAion.Foreground=primaryText; TitleDps.Foreground=hot;
         GroupDps.Foreground=primaryText; StatusText.Foreground=primaryText;
@@ -259,12 +284,21 @@ public partial class OverlayWindow : Window
         var report=new CombatReportWindow(provider,r.Stats.ActorId,(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7)) {Owner=this};
         report.Show();
     }
+    void CategoryChanged(object sender,System.Windows.Controls.SelectionChangedEventArgs e) {
+        if(Tabs==null||CategoryPicker.SelectedIndex<0)return;
+        Tabs.SelectedIndex=CategoryPicker.SelectedIndex;
+        if(last!=null)Render(last);
+    }
     void CloseOverlay(object s,RoutedEventArgs e)=>Hide();
-    void Drag(object s,MouseButtonEventArgs e){if(e.LeftButton==MouseButtonState.Pressed)DragMove();}
-    public void ApplyClickThrough(bool enabled){clickThrough=enabled;var h=new WindowInteropHelper(this).Handle;if(h==IntPtr.Zero)return;var ex=GetWindowLong(h,-20);SetWindowLong(h,-20,enabled?ex|0x20|0x08000000:ex&~0x20);}
+    void Drag(object s,MouseButtonEventArgs e){
+        var origin=e.OriginalSource as DependencyObject;
+        while(origin!=null && origin!=HeaderBar){if(origin is System.Windows.Controls.Primitives.ButtonBase)return;origin=VisualTreeHelper.GetParent(origin);}
+        if(e.LeftButton==MouseButtonState.Pressed){DragMove();e.Handled=true;}
+    }
+    public void ApplyClickThrough(bool enabled){clickThrough=enabled;var h=new WindowInteropHelper(this).Handle;if(h==IntPtr.Zero)return;var ex=GetWindowLong(h,-20);SetWindowLong(h,-20,enabled?ex|0x20:ex&~0x20);}
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd,int nIndex);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd,int nIndex,int dwNewLong);
     static string F(double v)=>v>=1_000_000?$"{v/1_000_000:0.00}M":v>=1_000?$"{v/1_000:0.0}K":$"{v:0}";
-    sealed record Row(int Rank,string Name,string ClassName,string Dps,string Damage,string Share,Brush Brush,double BarWidth,PlayerStats Stats);
+    sealed record Row(int Rank,string Name,string ClassName,string Dps,string Damage,string Share,Brush Brush,double BarWidth,double Relative,PlayerStats Stats);
 }
 

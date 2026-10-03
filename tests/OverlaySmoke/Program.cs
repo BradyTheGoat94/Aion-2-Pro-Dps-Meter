@@ -20,7 +20,7 @@ internal static class Program
    string color=((SolidColorBrush)((Border)window.FindName("Root")).Background).Color.ToString();
    if(color==previous)throw new Exception($"Theme did not change: {theme}");previous=color;
   }
-  foreach(var style in new[]{"Bars Only","Raid Compact","Glass Cards","Tournament","Classic Dashboard"})Invoke("ApplyOverlayStyle",style);
+  foreach(var style in new[]{"Details Inspired","Kagerou Inspired","Bars Only","Raid Compact","Glass Cards","Tournament","Classic Dashboard"})Invoke("ApplyOverlayStyle",style);
   if(((FrameworkElement)window.FindName("ToolbarGrid")).Visibility!=Visibility.Visible)throw new Exception("Classic did not restore toolbar");
   var t=DateTime.UtcNow;var engine=new CombatEngine(()=>t);
   engine.Apply(new(t,CombatKind.Damage,1,"Player",2,"Target","Strike",100));
@@ -72,6 +72,31 @@ internal static class Program
   using(var file=System.IO.File.Create("report-preview.png"))encoder.Save(file);
   report.Close();
   Console.WriteLine("PASS: modern report data, categories, targets, live refresh and pause");
+  window.SnapshotProvider=null;
+  var previewEngine=new CombatEngine(()=>t.AddSeconds(25)) {PreviewMode=true};
+  string[] classes={"Templar","Sorcerer","Assassin","Ranger","Spiritmaster","Gladiator","Cleric","Chanter"};
+  for(int i=0;i<classes.Length;i++) {
+   previewEngine.Apply(new(t,CombatKind.Damage,i+100,i==0?"TestHero":"Party member "+(i+1),900,"Training target","Opening skill",(8-i)*5000,SourceClass:classes[i]));
+   previewEngine.Apply(new(t.AddSeconds(25),CombatKind.Damage,i+100,i==0?"TestHero":"Party member "+(i+1),900,"Training target","Finishing skill",(8-i)*3500,SourceClass:classes[i]));
+  }
+  tabs.SelectedIndex=0;segment.SelectedIndex=0;Invoke("ApplyTheme","Ice Crystal");window.Show();
+  var rows=(ListView)window.FindName("Rows");
+  DataTemplate? previousTemplate=null;
+  foreach(var style in new[]{"Details Inspired","Kagerou Inspired","Classic Dashboard"}) {
+   Invoke("ApplyOverlayStyle",style);window.Render(previewEngine.Snapshot());window.UpdateLayout();
+   if(rows.ItemTemplate==previousTemplate)throw new Exception("Styles reused the same row design");previousTemplate=rows.ItemTemplate;
+   if(rows.Items.Count!=8)throw new Exception("Style lost party rows");
+   rows.SelectedIndex=0;
+   var overlayBitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);overlayBitmap.Render(window);
+   var png=new System.Windows.Media.Imaging.PngBitmapEncoder();png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(overlayBitmap));
+   using(var output=System.IO.File.Create("overlay-"+style.Replace(" ","-")+".png"))png.Save(output);
+  }
+  Invoke("ApplyOverlayStyle","Kagerou Inspired");
+  var picker=(ComboBox)window.FindName("CategoryPicker");picker.SelectedIndex=1;
+  if(tabs.SelectedIndex!=1)throw new Exception("Compact category picker did not select healing");
+  window.Render(previewEngine.Snapshot(MeterSegment.Current,MeterCategory.Healing));
+  if(rows.Items.Count!=0)throw new Exception("Compact healing view reused damage");
+  Console.WriteLine("PASS: distinct responsive meter designs, party rows and compact category selection");
   window.Close();Console.WriteLine("PASS: WPF themes, styles, segment/category switching");app.Shutdown();
  }
 }

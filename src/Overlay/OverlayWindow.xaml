@@ -8,31 +8,67 @@
   <Style TargetType="TextBlock"><Setter Property="Foreground" Value="#F4F7FF"/></Style>
   <Style TargetType="Button"><Setter Property="Background" Value="#14284A"/><Setter Property="Foreground" Value="#EAF2FF"/><Setter Property="BorderBrush" Value="#2F80ED"/><Setter Property="Padding" Value="9,4"/><Setter Property="Margin" Value="3,0"/></Style>
   <Style TargetType="TabItem"><Setter Property="Foreground" Value="#D9E8FF"/><Setter Property="Background" Value="#0E1C35"/><Setter Property="BorderBrush" Value="#2F80ED"/><Setter Property="Padding" Value="12,5"/></Style>
+
+  <Style TargetType="ComboBoxItem"><Setter Property="Foreground" Value="#E6EEF9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="Item" Padding="10,7" Background="#111C30"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="#244663"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="ComboBox"><Setter Property="Foreground" Value="#E6EEF9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid>
+   <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="#172940" BorderBrush="#35506E" BorderThickness="1" CornerRadius="4"><Grid Margin="9,3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="14"/></Grid.ColumnDefinitions><ContentPresenter Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="⌄" Foreground="#91B7D5"/></Grid></Border></ControlTemplate></ToggleButton.Template></ToggleButton>
+   <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False"><Border Background="#111C30" BorderBrush="#35506E" BorderThickness="1" Padding="3" MinWidth="150"><ScrollViewer MaxHeight="300"><StackPanel IsItemsHost="True"/></ScrollViewer></Border></Popup>
+  </Grid></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="ProgressBar"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ProgressBar"><Border x:Name="PART_Track" Background="{TemplateBinding Background}"><Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}"/></Border></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,0,3"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListViewItem"><Border x:Name="Item" BorderBrush="Transparent" BorderThickness="1" Background="Transparent" CornerRadius="3"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="Item" Property="BorderBrush" Value="#D9E8FF"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Item" Property="Background" Value="#302F80ED"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <DataTemplate x:Key="DetailsRows">
+   <Grid Height="32" ClipToBounds="True" Background="#402D3749">
+    <ProgressBar Value="{Binding Relative}" Maximum="100" Foreground="{Binding Brush}" Background="Transparent" Opacity="0.65" IsHitTestVisible="False"/>
+    <Grid Margin="8,0"><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="24"/><ColumnDefinition/><ColumnDefinition Width="84"/><ColumnDefinition Width="76"/><ColumnDefinition Width="52"/></Grid.ColumnDefinitions>
+     <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" FontWeight="Bold"/>
+     <Image Grid.Column="1" Width="19" Height="19" Source="{Binding ClassName, Converter={StaticResource ClassIconConverter}}"/>
+     <TextBlock Grid.Column="2" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontWeight="SemiBold" ToolTip="{Binding Name}"/>
+     <TextBlock Grid.Column="3" Text="{Binding Damage}" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+     <TextBlock Grid.Column="4" Text="{Binding Dps}" VerticalAlignment="Center" HorizontalAlignment="Right" FontWeight="Bold"/>
+     <TextBlock Grid.Column="5" Text="{Binding Share}" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="11"/>
+    </Grid>
+   </Grid>
+  </DataTemplate>
+  <DataTemplate x:Key="KagerouRows">
+   <Grid Height="43" ClipToBounds="True" Background="#18101723">
+    <ProgressBar Value="{Binding Relative}" Maximum="100" Foreground="{Binding Brush}" Background="Transparent" Opacity="0.13" IsHitTestVisible="False"/>
+    <ProgressBar Height="2" VerticalAlignment="Bottom" Value="{Binding Relative}" Maximum="100" Foreground="{Binding Brush}" Background="#252E3A50" IsHitTestVisible="False"/>
+    <Grid Margin="7,3"><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="27"/><ColumnDefinition/><ColumnDefinition Width="85"/><ColumnDefinition Width="54"/></Grid.ColumnDefinitions>
+     <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" Foreground="#8797B0" FontSize="11"/>
+     <Image Grid.Column="1" Width="19" Height="19" Source="{Binding ClassName, Converter={StaticResource ClassIconConverter}}"/>
+     <StackPanel Grid.Column="2" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Foreground="{Binding Brush}" FontWeight="SemiBold" ToolTip="{Binding Name}"/><TextBlock Text="{Binding ClassName}" FontSize="10" Foreground="#8797B0"/></StackPanel>
+     <StackPanel Grid.Column="3" VerticalAlignment="Center"><TextBlock Text="{Binding Dps}" FontSize="17" FontWeight="Light" HorizontalAlignment="Right"/><TextBlock Text="{Binding Damage}" FontSize="10" Foreground="#8797B0" HorizontalAlignment="Right"/></StackPanel>
+     <TextBlock Grid.Column="4" Text="{Binding Share}" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="#AFC0D9" FontSize="11"/>
+    </Grid>
+   </Grid>
+  </DataTemplate>
+     <DataTemplate x:Key="ClassicRows"><Grid Height="42" Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="76"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
+      <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#8FB8FF"/>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="Bold" Foreground="{Binding Brush}"/><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,4,0" Source="{Binding ClassName, Converter={StaticResource ClassIconConverter}}"/><TextBlock Text="{Binding ClassName}"/></StackPanel></StackPanel>
+      <Grid Grid.Column="2" Margin="8,8"><Border Background="#1B2B4D" CornerRadius="3"/><Border Background="{Binding Brush}" Opacity="0.82" HorizontalAlignment="Left" Width="{Binding BarWidth}" CornerRadius="3"/></Grid>
+      <StackPanel Grid.Column="3" VerticalAlignment="Center"><TextBlock Text="{Binding Dps}" HorizontalAlignment="Right" FontWeight="SemiBold"/><TextBlock Text="{Binding Damage}" HorizontalAlignment="Right" FontSize="10" Foreground="#AFC9EF"/></StackPanel>
+      <TextBlock Grid.Column="4" Text="{Binding Share}" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{Binding Brush}"/>
+     </Grid></DataTemplate>
  </Window.Resources>
- <Border x:Name="Root" Background="#F20A1630" BorderBrush="#E53935" BorderThickness="1.4" CornerRadius="9" MouseLeftButtonDown="Drag">
+ <Border x:Name="Root" Background="#F20A1630" BorderBrush="#E53935" BorderThickness="1.4" CornerRadius="9">
   <Grid x:Name="MainGrid">
    <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="66"/></Grid.RowDefinitions>
-   <Border x:Name="HeaderBar" Grid.Row="0" Background="#101F3D" CornerRadius="8,8,0,0" BorderBrush="#2F80ED" BorderThickness="0,0,0,1">
-    <DockPanel Margin="12,0">
+   <Border x:Name="HeaderBar" MouseLeftButtonDown="Drag" Grid.Row="0" Background="#101F3D" CornerRadius="8,8,0,0" BorderBrush="#2F80ED" BorderThickness="0,0,0,1">
+    <Grid Margin="12,0"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="TitleAion" Text="AION 2" FontSize="20" FontWeight="Bold" Foreground="#8FB8FF"/><TextBlock x:Name="TitleDps" Text="  DPS" FontSize="20" FontWeight="Bold" Foreground="#FF4D5A"/><Border x:Name="PreviewBadge" Background="#A8322630" CornerRadius="4" Margin="12,0,0,0" Padding="7,2"><TextBlock Text="SIMULATED PREVIEW" FontWeight="Bold" Foreground="#FFB3B8" FontSize="11"/></Border></StackPanel>
-     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="GroupDps" Foreground="#8FB8FF" Margin="0,0,14,0"/><TextBlock x:Name="Timer" Text="00:00" FontWeight="SemiBold"/><Button Content="⚙" ToolTip="Overlay settings" Click="OpenSettings"/><Button Content="×" Click="CloseOverlay"/></StackPanel>
-    </DockPanel>
+     <TextBlock x:Name="GroupDps" Grid.Column="1" Foreground="#8FB8FF" Margin="12,0" VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/><StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="Timer" Text="00:00" FontWeight="SemiBold"/><Button Content="⚙" ToolTip="Overlay settings" Click="OpenSettings"/><Button Content="×" Click="CloseOverlay"/></StackPanel>
+    </Grid>
    </Border>
    <Grid x:Name="ToolbarGrid" Grid.Row="1" Margin="10,5,10,3">
     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"><TabItem Header="Damage"/><TabItem Header="Healing"/><TabItem Header="Damage Taken"/><TabItem Header="Deaths" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Buffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Debuffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Interrupts" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Dispels" ToolTip="Aggregation supported; live opcode unverified"/></TabControl>
+    <ScrollViewer x:Name="CategoryTabs" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"><TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"><TabItem Header="Damage"/><TabItem Header="Healing"/><TabItem Header="Damage Taken"/><TabItem Header="Deaths" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Buffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Debuffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Interrupts" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Dispels" ToolTip="Aggregation supported; live opcode unverified"/></TabControl></ScrollViewer>
+    <ComboBox x:Name="CategoryPicker" Width="150" Height="28" HorizontalAlignment="Left" Visibility="Collapsed" SelectionChanged="CategoryChanged"/>
     <ComboBox x:Name="Segment" Grid.Column="1" Width="130" Height="28" SelectedIndex="0" Background="#14284A" Foreground="White"><ComboBoxItem Content="Current Fight"/><ComboBoxItem Content="Previous Fight"/><ComboBoxItem Content="Overall"/></ComboBox>
    </Grid>
    <Grid x:Name="ContentGrid" Grid.Row="2" Margin="12,4,12,6">
     <Grid.ColumnDefinitions><ColumnDefinition Width="1.7*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
-    <ListView x:Name="Rows" Background="#5A081326" BorderBrush="#284E7D" Foreground="#F4F7FF" SelectionChanged="PlayerSelected" MouseDoubleClick="OpenSelectedReport" ToolTip="Click a player for details • double-click for full report">
-     <ListView.ItemTemplate><DataTemplate><Grid Height="42" Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="150"/><ColumnDefinition/><ColumnDefinition Width="76"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
-      <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#8FB8FF"/>
-      <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{Binding Brush}"/><StackPanel Orientation="Horizontal"><Image Width="14" Height="14" Margin="0,0,4,0" Source="{Binding ClassName, Converter={StaticResource ClassIconConverter}}"/><TextBlock Text="{Binding ClassName}"/></StackPanel></StackPanel>
-      <Grid Grid.Column="2" Margin="8,8"><Border Background="#1B2B4D" CornerRadius="3"/><Border Background="{Binding Brush}" Opacity="0.82" HorizontalAlignment="Left" Width="{Binding BarWidth}" CornerRadius="3"/></Grid>
-      <StackPanel Grid.Column="3" VerticalAlignment="Center"><TextBlock Text="{Binding Dps}" HorizontalAlignment="Right" FontWeight="SemiBold"/><TextBlock Text="{Binding Damage}" HorizontalAlignment="Right" FontSize="10" Foreground="#AFC9EF"/></StackPanel>
-      <TextBlock Grid.Column="4" Text="{Binding Share}" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{Binding Brush}"/>
-     </Grid></DataTemplate></ListView.ItemTemplate>
+    <ListView x:Name="Rows" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ItemTemplate="{StaticResource ClassicRows}" Background="#5A081326" BorderBrush="#284E7D" Foreground="#F4F7FF" SelectionChanged="PlayerSelected" MouseDoubleClick="OpenSelectedReport" ToolTip="Click a player for details • double-click for full report">
+
     </ListView>
     <Border x:Name="DetailPanel" Grid.Column="2" Background="#70081326" BorderBrush="#284E7D" BorderThickness="1" CornerRadius="6" Padding="10">
      <StackPanel><TextBlock Text="PLAYER DETAILS" Foreground="#8FB8FF" FontWeight="Bold"/><TextBlock x:Name="SelectedPlayer" Text="Select a player" FontSize="18" FontWeight="Bold" Margin="0,8,0,2"/><TextBlock x:Name="SelectedMeta" Foreground="#AFC9EF"/>

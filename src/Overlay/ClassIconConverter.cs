@@ -8,7 +8,8 @@ public sealed class ClassIconConverter : IValueConverter
     {
         var c = value?.ToString();
         if (string.IsNullOrWhiteSpace(c) || c == "Unknown") return null;
-        return new Uri($"pack://application:,,,/Assets/ClassIcons/{c}.png", UriKind.Absolute);
+        return new Uri($"pack://application:,,,/Aion2DPSPro;component/Assets/ClassIcons/{c}.png", UriKind.Absolute);
     }
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+

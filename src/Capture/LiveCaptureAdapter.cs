@@ -128,7 +128,13 @@ public sealed class LiveCaptureAdapter : IDisposable
             return;
         }
         lastPayload=utc;if(decoded.Count>0)lastEvent=utc;
-        foreach(var e in decoded)EventReceived?.Invoke(identityBridge.Resolve(scope,e));
+        foreach(var e in decoded)
+        {
+            var resolved=identityBridge.Resolve(scope,e);
+            if(e.Kind is CombatKind.Damage or CombatKind.Heal)
+                ValidationRecord?.Invoke($"{utc:O}|tag=resolvedCombat|entity={resolved.SourceId}|name={resolved.Source}|target={resolved.TargetId}|scope={scope}|conversation={conversation}");
+            EventReceived?.Invoke(resolved);
+        }
     }
     private IAion2Decoder? selectedDecoder;
     public void Dispose()
