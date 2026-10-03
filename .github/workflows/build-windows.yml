@@ -1895,9 +1895,11 @@ jobs:
             $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
           }
 
+          # Insert the tracer before the already-existing embedded identity scan.
+          # The global/session link helper is created later in this same workflow step.
           if ($s -notmatch 'TraceGlobalSessionCandidates\(frame, utc\)') {
-            $dispatchAnchor = '        var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);'
-            if (-not $s.Contains($dispatchAnchor)) { throw "Global/session dispatch anchor missing" }
+            $dispatchAnchor = '        var embeddedIdentity = TryEmbeddedIdentity(frame, utc);'
+            if (-not $s.Contains($dispatchAnchor)) { throw "Embedded identity dispatch anchor missing for tracer" }
             $s = $s.Replace($dispatchAnchor, '        TraceGlobalSessionCandidates(frame, utc);' + [Environment]::NewLine + $dispatchAnchor)
           }
 
