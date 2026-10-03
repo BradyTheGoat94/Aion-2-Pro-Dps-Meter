@@ -757,6 +757,63 @@ jobs:
             throw "Damage amount field correction verification failed"
           }
 
+      - name: Add conservative alternate damage layout fallback
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Keep the validated normal layout unchanged. Only recover packets whose
+          # primary parse yields a tiny amount and an implausible skill id.
+          $needle = 'var dtype = DecodeType((byte)damageType, flagByte);'
+          if (-not $s.Contains($needle)) { throw "Damage type anchor missing" }
+
+          if ($s -notmatch 'TryRecoverAlternateDamage') {
+            $insert = @(
+              'if (damage <= 4 && skill > 30_000_000)',
+              '        {',
+              '            if (TryRecoverAlternateDamage(d, out var recoveredDamage))',
+              '                damage = recoveredDamage;',
+              '        }',
+              '',
+              '        var dtype = DecodeType((byte)damageType, flagByte);'
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($needle, $insert)
+
+            $helperLines = @(
+              '    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, out ulong damage)',
+              '    {',
+              '        damage = 0;',
+              '        // Alternate packets observed in validation carry a stable actor/base',
+              '        // value near the tail, followed immediately by the real varying hit.',
+              '        // Search only the final portion and require a plausible non-tiny hit.',
+              '        int start = Math.Max(0, d.Length - 12);',
+              '        for (int i = start; i < d.Length; i++)',
+              '        {',
+              '            int p = i;',
+              '            if (!ReadV(d, ref p, out var first)) continue;',
+              '            if (first < 5_000 || first > 50_000) continue;',
+              '            if (!ReadV(d, ref p, out var hit)) continue;',
+              '            if (hit < 20 || hit > 5_000_000) continue;',
+              '            damage = hit;',
+              '            return true;',
+              '        }',
+              '        return false;',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for alternate damage helper" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'damage <= 4 && skill > 30_000_000' -or $verify -notmatch 'private static bool TryRecoverAlternateDamage') {
+            throw "Alternate damage fallback verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
