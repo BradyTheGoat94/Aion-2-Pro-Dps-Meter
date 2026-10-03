@@ -31,6 +31,25 @@ internal static class Program
   if(((ListView)window.FindName("Rows")).Items.Count!=1)throw new Exception("Damage rows missing");
   tabs.SelectedIndex=1;window.Render(engine.Snapshot());
   if(((ListView)window.FindName("Rows")).Items.Count!=0)throw new Exception("Healing incorrectly reused damage rows");
+  // Integration: identity-only socket and combat socket, same exact entity and endpoint scope.
+  var captureEngine=new CombatEngine(()=>t);
+  var identityProfile=new Aion2DPSPro.Protocol.ProtocolProfile("test","test","test",13328,new Dictionary<string,Aion2DPSPro.Protocol.PacketTag>{{"selfInfo",new(51,54)},{"damage",new(4,56)}});
+  using(var adapter=new Aion2DPSPro.Capture.LiveCaptureAdapter(new Aion2DPSPro.Protocol.CurrentClientDecoder(identityProfile)))
+  {
+   adapter.EventReceived+=captureEngine.Apply;
+   var process=typeof(Aion2DPSPro.Capture.LiveCaptureAdapter).GetMethod("Process",BindingFlags.NonPublic|BindingFlags.Instance)!;
+   void Packet(ushort localPort,string hex)
+   {
+    var ip=new PacketDotNet.IPv4Packet(System.Net.IPAddress.Parse("10.0.0.2"),System.Net.IPAddress.Parse("10.0.0.1"));
+    var tcp=new PacketDotNet.TcpPacket(13328,localPort) {SequenceNumber=100,PayloadData=Convert.FromHexString(hex)};
+    ip.PayloadPacket=tcp;process.Invoke(adapter,new object[]{"test-adapter",ip,t});
+   }
+   Packet(50001,"193336FD235F81C1283708546573744865726F000000");
+   Packet(50002,"210438E3A0020400FD2340B7B70009020B95C34701000000D658E7020100");
+   if(captureEngine.Snapshot().Players.Single().Name!="TestHero")throw new Exception("Identity-only connection did not resolve combat name");
+   adapter.Dispose();adapter.Completion.GetAwaiter().GetResult();
+  }
+  Console.WriteLine("PASS: separate identity/combat sockets resolve exact actor name");
   var reportEngine=new CombatEngine(()=>t.AddSeconds(15));
   reportEngine.Apply(new(t,CombatKind.Damage,1,"TestHero",2,"Training Scarecrow","Punishing Strike",18000,SourceClass:"Templar",DamageFlags:DamageFlags.Critical|DamageFlags.Perfect));
   reportEngine.Apply(new(t.AddSeconds(4),CombatKind.Damage,1,"TestHero",2,"Training Scarecrow","Desperate Strike",12000,SourceClass:"Templar",DamageFlags:DamageFlags.Back));
