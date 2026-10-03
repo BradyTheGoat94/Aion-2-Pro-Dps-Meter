@@ -1,0 +1,21 @@
+name: Combat Regression Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore regression tests
+        run: dotnet restore tests/Aion2DPSPro.Tests.csproj
+      - name: Run combat regression tests
+        run: dotnet test tests/Aion2DPSPro.Tests.csproj --configuration Release --no-restore --verbosity normal
