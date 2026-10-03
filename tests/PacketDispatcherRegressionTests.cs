@@ -93,4 +93,24 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(amount, hit.Amount);
         Assert.Equal(damageType, hit.DamageType);
     }
+
+
+    [Fact]
+    public void CombatEngine_LatePlayerIdentity_RefreshesActiveEventHistory()
+    {
+        var engine = new CombatEngine();
+        var at = DateTime.UnixEpoch.AddSeconds(1);
+
+        engine.Apply(new CombatEvent(at, CombatKind.Damage, 15433, "Actor 15433", 80880, "Target 80880",
+            "Dimensional Control", 1120, DamageType.Frontal, DamageFlags.Frontal, 0, "", 0, 0, false, "Spiritmaster"));
+        engine.Apply(new CombatEvent(at.AddSeconds(2), CombatKind.PlayerName, 15433, "PUTXYS", 0, "",
+            "", 0, DamageType.Unknown, DamageFlags.None, 0, "", 0, 0, false, "Spiritmaster"));
+
+        var snapshot = engine.Current;
+        var row = Assert.Single(snapshot.Players.Where(x => x.EntityId == 15433 || x.RawEntityId == 15433));
+        Assert.Equal("PUTXYS", row.Name);
+        var combatEvent = Assert.Single(snapshot.Events.Where(x => x.Kind == CombatKind.Damage && x.SourceId == 15433));
+        Assert.Equal("PUTXYS", combatEvent.Source);
+        Assert.Equal("Spiritmaster", combatEvent.SourceClass);
+    }
 }
