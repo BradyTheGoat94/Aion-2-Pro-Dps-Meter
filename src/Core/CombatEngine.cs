@@ -24,6 +24,14 @@ public sealed class CombatEngine
             events.Add(e);
             if (events.Count > 100_000) events.RemoveRange(0, 10_000);
 
+            if (e.Kind == CombatKind.PlayerName && e.SourceId != 0 && !string.IsNullOrWhiteSpace(e.Source))
+            {
+                if (players.TryGetValue(e.SourceId, out var known))
+                    players[e.SourceId] = (e.Source,
+                        string.IsNullOrWhiteSpace(e.SourceClass) || e.SourceClass == "Unknown" ? known.ClassName : e.SourceClass,
+                        known.Damage, known.Hits, known.Crits);
+            }
+
             if (e.Kind == CombatKind.Damage && e.Amount > 0)
             {
                 sessionStart ??= e.Utc;
@@ -92,9 +100,20 @@ public sealed class CombatEngine
             var sessionSeconds = sessionStart.HasValue ? Math.Max(.001, (now - sessionStart.Value).TotalSeconds) : 0;
             var total = players.Values.Sum(x => x.Damage);
 
+            // A character can briefly appear under multiple session/summon-facing IDs.
+            // Once those IDs resolve to the same validated name, present one player row while
+            // preserving every hit and point of damage.
             var rows = players.Values
-                .Select(p => new PlayerStats(p.Name, p.ClassName, p.Damage, p.Damage / Math.Max(.001, fightSeconds),
-                    total == 0 ? 0 : p.Damage * 100.0 / total, p.Hits, p.Hits == 0 ? 0 : p.Crits * 100.0 / p.Hits))
+                .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var damage = g.Sum(x => x.Damage);
+                    var hits = g.Sum(x => x.Hits);
+                    var crits = g.Sum(x => x.Crits);
+                    var className = g.Select(x => x.ClassName).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x) && x != "Unknown") ?? "Unknown";
+                    return new PlayerStats(g.First().Name, className, damage, damage / Math.Max(.001, fightSeconds),
+                        total == 0 ? 0 : damage * 100.0 / total, hits, hits == 0 ? 0 : crits * 100.0 / hits);
+                })
                 .OrderByDescending(p => p.Damage).ToList();
 
             var skillRows = skills.Select(x => new SkillStats(x.Key, x.Value.Damage, x.Value.Hits,
