@@ -630,6 +630,14 @@ jobs:
 
           if ($s -notmatch 'private static bool TryReadSkillField') {
             $helperLines = @(
+              '    private static bool IsPlausibleSkillCode(int code)',
+              '    {',
+              '        return (code >= 11_000_000 && code < 20_000_000) ||',
+              '               (code >= 1_000_000 && code < 10_000_000) ||',
+              '               (code >= 100_000 && code < 200_000) ||',
+              '               (code >= 29_000_000 && code < 31_000_000);',
+              '    }',
+              '',
               '    private static bool TryReadSkillField(ReadOnlySpan<byte> d, ref int p, out int skill)',
               '    {',
               '        skill = 0;',
@@ -639,7 +647,7 @@ jobs:
               '            if (raw <= 0) continue;',
               '',
               '            int candidate = raw;',
-              '            if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '            if (IsPlausibleSkillCode(candidate))',
               '            {',
               '                skill = candidate;',
               '                p += i + 5;',
@@ -649,7 +657,7 @@ jobs:
               '            if (raw % 100 == 0)',
               '            {',
               '                candidate = raw / 100;',
-              '                if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '                if (IsPlausibleSkillCode(candidate))',
               '                {',
               '                    skill = candidate;',
               '                    p += i + 5;',
@@ -672,7 +680,7 @@ jobs:
           Set-Content $p $s
 
           $verify = Get-Content $p -Raw
-          if ($verify -notmatch 'TryReadSkillField\(d,\s*ref\s+p') {
+          if ($verify -notmatch 'TryReadSkillField\(d,\s*ref\s+p' -or $verify -notmatch 'IsPlausibleSkillCode') {
             throw "Damage parser verification failed"
           }
 
