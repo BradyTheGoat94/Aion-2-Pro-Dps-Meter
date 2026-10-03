@@ -1207,7 +1207,7 @@ jobs:
           $verify = Get-Content $p -Raw
           if ($verify -notmatch 'Mapped entity' -or
               $verify -notmatch 'tag=identityMap' -or
-              $verify -notmatch 'ResolveName\(\(long\)actor') {
+              $verify -notmatch 'identities\[id\] = new PlayerIdentity') {
             throw "Verified identity promotion patch failed"
           }
 
