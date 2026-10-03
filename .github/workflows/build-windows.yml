@@ -613,6 +613,50 @@ jobs:
           }
           Set-Content $xamlPath $xaml
 
+      - name: Correct damage skill-field alignment
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+          $old = 'if (!ReadV(d, ref p, out var skill) || skill==0 || skill>200_000_000) return null;' + [Environment]::NewLine + '        if (!ReadV(d, ref p, out var damageType)) return null;'
+          $new = 'if (!TryReadSkillField(d, ref p, out var skill)) return null;' + [Environment]::NewLine + '        if (!ReadV(d, ref p, out var damageType)) return null;'
+          if ($s.Contains($old)) { $s = $s.Replace($old,$new) }
+          if ($s -notmatch 'TryReadSkillField') { throw "skill replacement failed" }
+          if ($s -notmatch 'private static bool TryReadSkillField') {
+            $helper = @(
+              '    private static bool TryReadSkillField(ReadOnlySpan<byte> d, ref int p, out int skill)',
+              '    {',
+              '        skill = 0;',
+              '        for (int i = 0; i < 7 && p + i + 4 <= d.Length; i++)',
+              '        {',
+              '            int raw = d[p+i] | (d[p+i+1] << 8) | (d[p+i+2] << 16) | (d[p+i+3] << 24);',
+              '            if (raw <= 0) continue;',
+              '            int candidate = raw;',
+              '            if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '            {',
+              '                skill = candidate;',
+              '                p += i + 5;',
+              '                return true;',
+              '            }',
+              '            if (raw % 100 == 0)',
+              '            {',
+              '                candidate = raw / 100;',
+              '                if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '                {',
+              '                    skill = candidate;',
+              '                    p += i + 5;',
+              '                    return true;',
+              '                }',
+              '            }',
+              '        }',
+              '        return false;',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $s = $s.Replace('    private static bool ReadV(', $helper + [Environment]::NewLine + '    private static bool ReadV(')
+          }
+          Set-Content $p $s
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
