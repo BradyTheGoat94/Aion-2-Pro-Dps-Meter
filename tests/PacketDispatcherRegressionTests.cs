@@ -69,4 +69,28 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(1027, hit.Amount);
         Assert.Equal(DamageType.Perfect, hit.DamageType);
     }
+
+
+    [Theory]
+    [InlineData("240438B48A02060095764792D2008802080001C723415201000000BE63D2160100", 15125, 34100, 2898, DamageType.Double)]
+    [InlineData("240438B48A0206009576181DD2009B020000016B5D135201000000BE63C80B0100", 15125, 34100, 1480, DamageType.Back)]
+    [InlineData("240438ED8A010600C82F42451301FB02040001D0E6866B020000009864822A0200", 6088, 17773, 5378, DamageType.Perfect)]
+    [InlineData("240438ED8A010600C82F42451301BD03000001D0E6866B020000009864DE3F0200", 6088, 17773, 8158, DamageType.Crit)]
+    [InlineData("240438E3A0020600B10E40B7B70009020000020B95C34701000000D65880030100", 1841, 36963, 384, DamageType.Frontal)]
+    [InlineData("210438D885010400C72FD1E3FF001202AFFDF463010000009E55B5020100", 6087, 17112, 309, DamageType.Direct)]
+    [InlineData("280438C82F4610ED8A01B2081300F402820002F556BE0001000000904E010113B7A36F0100", 17773, 6088, 62, DamageType.Parry)]
+    public void LiveCapture_20261003_DamageLayouts_DecodeExpected(
+        string raw, long sourceId, long targetId, long amount, DamageType damageType)
+    {
+        // Exact raw packets copied from combat-20261003-134933.log.
+        // These cover every non-DoT damage type observed in that capture.
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(raw), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events.Where(x => x.Kind == CombatKind.Damage));
+        Assert.Equal(sourceId, hit.SourceId);
+        Assert.Equal(targetId, hit.TargetId);
+        Assert.Equal(amount, hit.Amount);
+        Assert.Equal(damageType, hit.DamageType);
+    }
 }
