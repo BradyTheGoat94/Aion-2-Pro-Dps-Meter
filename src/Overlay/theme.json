@@ -1,0 +1,13 @@
+{
+  "name": "BlueRed Details",
+  "background": "#0A1630",
+  "panel": "#101F3D",
+  "panelBorder": "#E85B2730",
+  "primaryBlue": "#2F80ED",
+  "brightBlue": "#8FB8FF",
+  "damageRed": "#E53935",
+  "brightRed": "#FF6B6B",
+  "text": "#F4F7FF",
+  "mutedText": "#8FB8FF",
+  "barBackground": "#1B2B4D"
+}

@@ -1,0 +1,53 @@
+{
+  "id": "EXPERIMENTAL-A2METER-CURRENT-TAGS-2026-10-02",
+  "region": "Global/experimental",
+  "clientBuild": "current-reference-table",
+  "gamePort": 13328,
+  "tags": {
+    "damage": {
+      "a": 4,
+      "b": 56
+    },
+    "dot": {
+      "a": 5,
+      "b": 56
+    },
+    "battleStats": {
+      "a": 42,
+      "b": 56
+    },
+    "battleStatsAlt": {
+      "a": 43,
+      "b": 56
+    },
+    "selfInfo": {
+      "a": 51,
+      "b": 54
+    },
+    "otherInfo": {
+      "a": 69,
+      "b": 54
+    },
+    "mobSpawn": {
+      "a": 65,
+      "b": 54
+    },
+    "bossHp": {
+      "a": 1,
+      "b": 141
+    },
+    "guard": {
+      "a": 3,
+      "b": 54
+    },
+    "entityRemoved": {
+      "a": 33,
+      "b": 141
+    },
+    "charLookup": {
+      "a": 79,
+      "b": 54
+    }
+  },
+  "verified": false
+}

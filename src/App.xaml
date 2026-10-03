@@ -1,0 +1,9 @@
+<Application x:Class="Aion2DPSPro.App"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Application.Resources>
+  <SolidColorBrush x:Key="Panel" Color="#B30B1019"/>
+  <SolidColorBrush x:Key="Text" Color="#F3F6FF"/>
+  <SolidColorBrush x:Key="Muted" Color="#9AA8C2"/>
+ </Application.Resources>
+</Application>
