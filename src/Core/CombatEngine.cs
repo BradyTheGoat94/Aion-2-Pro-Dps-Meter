@@ -79,10 +79,34 @@ public sealed class CombatEngine
         }
         if(confirmed&&named)confirmedIdentities.Add(id);
         identities[id] = new Identity(named ? name : old?.Name ?? $"Actor {id}", cls != "Unknown" && !string.IsNullOrWhiteSpace(cls) ? cls : old?.ClassName ?? "Unknown");
-        // Freeze resolved names in historical records rather than relabeling them after ID reuse.
-        if (current.Start != null && !current.Completed) current.Names[Key(id)] = identities[id];
+        // Identity packets can arrive seconds after combat starts. Refresh the
+        // active encounter's cached event labels when a placeholder becomes a
+        // confirmed player name, while preserving completed encounter history
+        // and the existing ID-reuse safeguards above.
+        if (current.Start != null && !current.Completed)
+        {
+            current.Names[Key(id)] = identities[id];
+            if (confirmed && named) RefreshActiveIdentity(current, Key(id), identities[id]);
+        }
         overall.Names[Key(id)] = identities[id];
+        if (confirmed && named) RefreshActiveIdentity(overall, Key(id), identities[id]);
     }
+    private static void RefreshActiveIdentity(Encounter encounter, long id, Identity identity)
+    {
+        if (encounter.Events.Count == 0) return;
+        var refreshed = new Queue<CombatEvent>(encounter.Events.Count);
+        foreach (var evt in encounter.Events)
+        {
+            var updated = evt;
+            if (evt.SourceId == id && (string.IsNullOrWhiteSpace(evt.Source) || evt.Source.StartsWith("Actor ")))
+                updated = updated with { Source = identity.Name, SourceClass = identity.ClassName };
+            if (evt.TargetId == id && (string.IsNullOrWhiteSpace(evt.Target) || evt.Target.StartsWith("Actor ") || evt.Target.StartsWith("Target ")))
+                updated = updated with { Target = identity.Name };
+            refreshed.Enqueue(updated);
+        }
+        encounter.Events = refreshed;
+    }
+
     private long Key(long id) => entityKeys.GetValueOrDefault(id,id);
     private long Owner(long id)
     {
