@@ -69,6 +69,13 @@ public sealed class CombatEngine
     {
         identities.TryGetValue(id, out var old);
         bool named = !string.IsNullOrWhiteSpace(name) && !name.StartsWith("Actor ") && !name.StartsWith("Target ");
+        if(named && old!=null && !old.Name.StartsWith("Actor ") && !old.Name.StartsWith("Target ") && !string.Equals(old.Name,name,StringComparison.Ordinal))
+        {
+            // An explicit different identity is evidence of reuse even if visibility removal was ignored.
+            entityKeys[id]=nextEntityKey--;owners.Remove(id);
+            foreach(var child in owners.Where(x=>x.Value==id).Select(x=>x.Key).ToArray())owners.Remove(child);
+            old=null;
+        }
         identities[id] = new Identity(named ? name : old?.Name ?? $"Actor {id}", cls != "Unknown" && !string.IsNullOrWhiteSpace(cls) ? cls : old?.ClassName ?? "Unknown");
         // Freeze resolved names in historical records rather than relabeling them after ID reuse.
         if (current.Start != null && !current.Completed) current.Names[Key(id)] = identities[id];

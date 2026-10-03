@@ -2100,10 +2100,17 @@ internal static class PublicGameData
         // Prefer the English NPC catalogue by numeric mob/template code. This prevents
         // Korean bootstrap names from reaching the overlay at all.
         if (englishMobs is not null && englishMobs.TryGetValue(code, out var english))
-            return english;
+            return EnglishTargetLabel(english);
         if (mobs is not null && mobs.TryGetValue(code, out var name))
-            return LocalizeEnglish(name);
+            return EnglishTargetLabel(LocalizeEnglish(name));
         return null;
+    }
+
+    internal static string? EnglishTargetLabel(string? name)
+    {
+        // Unknown localized NPC text must fall back to Target <entity>, never a guessed translation.
+        if(string.IsNullOrWhiteSpace(name) || name.Any(c=>char.IsLetter(c) && c>'\u024F'))return null;
+        return name;
     }
 
     private static void EnsureLoaded()
@@ -2211,4 +2218,5 @@ internal static class PublicGameData
             foreach (var item in node.EnumerateArray()) CollectSkills(item, map);
     }
 }
+
 

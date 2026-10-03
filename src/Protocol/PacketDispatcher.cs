@@ -92,10 +92,10 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
     {
         if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
         long id=(long)value;
-        // The live log shows this removal immediately before local-player attacks.
-        // A selfInfo identity belongs to the local connection, not visibility lifetime.
-        if(id==selfEntityId) {
-            Diagnostic?.Invoke(new(DateTime.UtcNow,"identity-map","Retained local-player identity across entity removal",frame.Length));
+        // Captures show this removal for named players who continue attacking.
+        // Do not treat this unverified visibility packet as proof of player ID reuse.
+        if(id==selfEntityId || identities.ContainsKey(id)) {
+            Diagnostic?.Invoke(new(DateTime.UtcNow,"identity-map","Retained known player identity across entity removal",frame.Length));
             return null;
         }
         identities.Remove(id);globalPlayerNames.Remove(id);partyIdentities.Remove(id);sessionToGlobal.Remove(id);
