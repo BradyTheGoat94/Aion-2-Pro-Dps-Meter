@@ -1025,6 +1025,88 @@ jobs:
             throw "Identity validation logging patch failed"
           }
 
+      - name: Trace entity lifecycle identity bridge
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Observe entity lifecycle packet families without changing combat output.
+          $boss = '"bossHp" => TryBossHp(frame, p+2, utc),'
+          if ($s.Contains($boss) -and $s -notmatch '"mobSpawn" => ObserveEntityBridge') {
+            $extra = $boss + [Environment]::NewLine +
+              '            "mobSpawn" => ObserveEntityBridge(frame, p+2, utc, "mobSpawn"),' + [Environment]::NewLine +
+              '            "entityRemoved" => ObserveEntityBridge(frame, p+2, utc, "entityRemoved"),'
+            $s = $s.Replace($boss, $extra)
+          }
+
+          # Existing identity packet observers already cover selfInfo/otherInfo/charLookup.
+          # Add a bounded structural dump that records varints with offsets and printable
+          # strings so we can correlate entity lifecycle IDs to combat source IDs.
+          if ($s -notmatch 'private Aion2Decoded\? ObserveEntityBridge') {
+            $lines = @(
+              '    private static string DescribeBridgeFields(ReadOnlySpan<byte> d, int start)',
+              '    {',
+              '        var parts = new List<string>();',
+              '        int end = Math.Min(d.Length, start + 160);',
+              '        for (int i = Math.Max(0, start); i < end; i++)',
+              '        {',
+              '            int q = i;',
+              '            if (!ReadV(d, ref q, out var v)) continue;',
+              '            if (v > 0 && v <= 200000000)',
+              '                parts.Add($"{i}:v={v}");',
+              '            if (parts.Count >= 40) break;',
+              '        }',
+              '        return string.Join(",", parts);',
+              '    }',
+              '',
+              '    private static string DescribeBridgeStrings(ReadOnlySpan<byte> d, int start)',
+              '    {',
+              '        var found = new List<string>();',
+              '        int end = Math.Min(d.Length, start + 256);',
+              '        int i = Math.Max(0, start);',
+              '        while (i < end)',
+              '        {',
+              '            int j = i;',
+              '            while (j < end && d[j] >= 0x20 && d[j] <= 0x7E) j++;',
+              '            if (j - i >= 3)',
+              '            {',
+              '                var t = System.Text.Encoding.UTF8.GetString(d.Slice(i, Math.Min(j-i, 32)));',
+              '                found.Add($"{i}:{t.Replace("|","/")}");',
+              '                if (found.Count >= 8) break;',
+              '            }',
+              '            i = Math.Max(i + 1, j + 1);',
+              '        }',
+              '        return string.Join(",", found);',
+              '    }',
+              '',
+              '    private Aion2Decoded? ObserveEntityBridge(ReadOnlySpan<byte> d, int p, DateTime utc, string packetKind)',
+              '    {',
+              '        var fields = DescribeBridgeFields(d, p);',
+              '        var strings = DescribeBridgeStrings(d, p);',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=entityBridge|packet={packetKind}|fields={fields}|strings={strings}|raw={Convert.ToHexString(d)}");',
+              '        Diagnostic?.Invoke(new(utc,"entity-bridge",$"{packetKind} fields={fields}",d.Length));',
+              '        return null;',
+              '    }',
+              ''
+            )
+            $helper = $lines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for bridge tracer" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          # Enrich identity records with the same structural field/string dump.
+          $old = 'ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|idCandidates={idCandidates}|raw={Convert.ToHexString(d)}");'
+          $new = 'ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|idCandidates={idCandidates}|bridgeFields={DescribeBridgeFields(d,start)}|bridgeStrings={DescribeBridgeStrings(d,start)}|raw={Convert.ToHexString(d)}");'
+          if ($s.Contains($old)) { $s = $s.Replace($old, $new) }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'tag=entityBridge' -or $verify -notmatch '"mobSpawn" => ObserveEntityBridge' -or $verify -notmatch 'bridgeFields=') {
+            throw "Entity bridge tracer verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
