@@ -8,4 +8,5 @@ GitHub Actions publishes a self-contained Windows x64 build. Run the **Build Win
 ## Live capture
 Requires Npcap on the test PC. The application observes TCP/13328 passively and does not inject into or modify the game process.
 
-See `docs/FIRST-LIVE-TEST.md` before testing.
+See [accuracy and reliability status](docs/accuracy-reliability.md) for implemented features, timing rules, validation commands and remaining live-protocol work.
+
