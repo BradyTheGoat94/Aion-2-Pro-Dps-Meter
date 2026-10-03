@@ -1844,7 +1844,10 @@ jobs:
 
           Set-Content $p $s
           $v = Get-Content $p -Raw
-          if ($v -notmatch '14010000 => "Deadshot"' -or $v -notmatch '14340000 => "Tempest Shot"' -or $v -notmatch 'SkillName\(skill\)') {
+          if ($v -notmatch '14010000 => "Deadshot"' -or
+              $v -notmatch '14340000 => "Tempest Shot"' -or
+              $v -notmatch 'private static string SkillName' -or
+              $v -notmatch 'SkillName\(checked\(\(int\)skill\)\)') {
             throw "Skill name resolver patch failed"
           }
 
