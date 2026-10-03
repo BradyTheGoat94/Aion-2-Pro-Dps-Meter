@@ -6,6 +6,7 @@ public sealed class CombatEngine
     private readonly object gate = new();
     private readonly Func<DateTime> clock;
     private readonly Dictionary<long, Identity> identities = new();
+    private readonly HashSet<long> confirmedIdentities = new();
     private readonly Dictionary<long, long> owners = new();
     private readonly Dictionary<long,long> entityKeys=new();
     private long nextEntityKey=-1;
@@ -29,18 +30,18 @@ public sealed class CombatEngine
             var t = latestUtc.HasValue && e.Utc < latestUtc ? latestUtc.Value : e.Utc;
             latestUtc = t;
             if (Expired(t)) completed = Finish("Inactivity");
-            if (e.Kind == CombatKind.Zone) { completed = Finish("Zone changed") ?? completed; foreach(var id in identities.Keys.ToArray()) entityKeys[id]=nextEntityKey--; identities.Clear(); owners.Clear(); }
+            if (e.Kind == CombatKind.Zone) { completed = Finish("Zone changed") ?? completed; foreach(var id in identities.Keys.ToArray()) entityKeys[id]=nextEntityKey--; identities.Clear(); confirmedIdentities.Clear(); owners.Clear(); }
             else if (e.Kind == CombatKind.CombatEnd) completed = Finish("Combat ended") ?? completed;
             else
             {
                 if (e.Kind == CombatKind.Despawn)
                 {
-                    identities.Remove(e.SourceId); owners.Remove(e.SourceId); entityKeys[e.SourceId]=nextEntityKey--;
+                    identities.Remove(e.SourceId); confirmedIdentities.Remove(e.SourceId); owners.Remove(e.SourceId); entityKeys[e.SourceId]=nextEntityKey--;
                     foreach(var child in owners.Where(x=>x.Value==e.SourceId).Select(x=>x.Key).ToArray()) owners.Remove(child);
                 }
                 else if (e.Kind == CombatKind.Ownership && e.SourceId != 0 && e.OwnerId != 0 && e.SourceId != e.OwnerId)
                     owners[e.SourceId] = e.OwnerId;
-                else if (e.SourceId != 0) Remember(e.SourceId, e.Source, e.SourceClass);
+                else if (e.SourceId != 0) Remember(e.SourceId, e.Source, e.SourceClass,e.Kind==CombatKind.PlayerName);
                 if (e.TargetId != 0) Remember(e.TargetId, e.Target, "Unknown");
                 bool activity = (e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0 || e.Kind == CombatKind.CombatStart;
                 if (activity)
@@ -65,17 +66,18 @@ public sealed class CombatEngine
         if (completed != null) EncounterCompleted?.Invoke(completed);
     }
 
-    private void Remember(long id, string name, string cls)
+    private void Remember(long id, string name, string cls,bool confirmed=false)
     {
         identities.TryGetValue(id, out var old);
         bool named = !string.IsNullOrWhiteSpace(name) && !name.StartsWith("Actor ") && !name.StartsWith("Target ");
-        if(named && old!=null && !old.Name.StartsWith("Actor ") && !old.Name.StartsWith("Target ") && !string.Equals(old.Name,name,StringComparison.Ordinal))
+        if(confirmed && confirmedIdentities.Contains(id) && named && old!=null && !old.Name.StartsWith("Actor ") && !old.Name.StartsWith("Target ") && !string.Equals(old.Name,name,StringComparison.Ordinal))
         {
             // An explicit different identity is evidence of reuse even if visibility removal was ignored.
             entityKeys[id]=nextEntityKey--;owners.Remove(id);
             foreach(var child in owners.Where(x=>x.Value==id).Select(x=>x.Key).ToArray())owners.Remove(child);
             old=null;
         }
+        if(confirmed&&named)confirmedIdentities.Add(id);
         identities[id] = new Identity(named ? name : old?.Name ?? $"Actor {id}", cls != "Unknown" && !string.IsNullOrWhiteSpace(cls) ? cls : old?.ClassName ?? "Unknown");
         // Freeze resolved names in historical records rather than relabeling them after ID reuse.
         if (current.Start != null && !current.Completed) current.Names[Key(id)] = identities[id];

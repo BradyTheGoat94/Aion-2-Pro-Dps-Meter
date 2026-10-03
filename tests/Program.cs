@@ -77,6 +77,7 @@ True(!identityDecoder.Decode(Frame("218DA2210001"),t.AddSeconds(1)).Any(x=>x.Kin
 var allyDamage=identityDecoder.Decode(Convert.FromHexString("210438E3A0020400A22140B7B70009020B95C34701000000D658E7020100"),t.AddSeconds(2)).Single(x=>x.Kind==CombatKind.Damage);
 True(allyDamage.Source=="TestAlly","ally name remains after visibility removal");
 var nameReuse=new CombatEngine(()=>t);
+nameReuse.Apply(new(t,CombatKind.PlayerName,4258,"FirstPlayer"));
 nameReuse.Apply(Hit(0,4258,100,"FirstPlayer"));
 nameReuse.Apply(new(t.AddSeconds(1),CombatKind.PlayerName,4258,"SecondPlayer"));
 nameReuse.Apply(Hit(2,4258,50,"SecondPlayer"));
