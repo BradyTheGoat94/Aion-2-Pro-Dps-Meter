@@ -10,20 +10,20 @@
   <Style TargetType="TabItem"><Setter Property="Foreground" Value="#D9E8FF"/><Setter Property="Background" Value="#0E1C35"/><Setter Property="BorderBrush" Value="#2F80ED"/><Setter Property="Padding" Value="12,5"/></Style>
  </Window.Resources>
  <Border x:Name="Root" Background="#F20A1630" BorderBrush="#E53935" BorderThickness="1.4" CornerRadius="9" MouseLeftButtonDown="Drag">
-  <Grid>
+  <Grid x:Name="MainGrid">
    <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="66"/></Grid.RowDefinitions>
    <Border x:Name="HeaderBar" Grid.Row="0" Background="#101F3D" CornerRadius="8,8,0,0" BorderBrush="#2F80ED" BorderThickness="0,0,0,1">
     <DockPanel Margin="12,0">
-     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="AION 2" FontSize="20" FontWeight="Bold" Foreground="#8FB8FF"/><TextBlock Text="  DPS" FontSize="20" FontWeight="Bold" Foreground="#FF4D5A"/><Border x:Name="PreviewBadge" Background="#A8322630" CornerRadius="4" Margin="12,0,0,0" Padding="7,2"><TextBlock Text="SIMULATED PREVIEW" FontWeight="Bold" Foreground="#FFB3B8" FontSize="11"/></Border></StackPanel>
+     <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="TitleAion" Text="AION 2" FontSize="20" FontWeight="Bold" Foreground="#8FB8FF"/><TextBlock x:Name="TitleDps" Text="  DPS" FontSize="20" FontWeight="Bold" Foreground="#FF4D5A"/><Border x:Name="PreviewBadge" Background="#A8322630" CornerRadius="4" Margin="12,0,0,0" Padding="7,2"><TextBlock Text="SIMULATED PREVIEW" FontWeight="Bold" Foreground="#FFB3B8" FontSize="11"/></Border></StackPanel>
      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="GroupDps" Foreground="#8FB8FF" Margin="0,0,14,0"/><TextBlock x:Name="Timer" Text="00:00" FontWeight="SemiBold"/><Button Content="⚙" ToolTip="Overlay settings" Click="OpenSettings"/><Button Content="×" Click="CloseOverlay"/></StackPanel>
     </DockPanel>
    </Border>
-   <Grid Grid.Row="1" Margin="10,5,10,3">
+   <Grid x:Name="ToolbarGrid" Grid.Row="1" Margin="10,5,10,3">
     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"><TabItem Header="Damage"/><TabItem Header="Healing"/><TabItem Header="Damage Taken"/><TabItem Header="Deaths"/><TabItem Header="Buffs"/><TabItem Header="Debuffs"/><TabItem Header="Interrupts"/><TabItem Header="Dispels"/></TabControl>
     <ComboBox x:Name="Segment" Grid.Column="1" Width="130" Height="28" SelectedIndex="0" Background="#14284A" Foreground="White"><ComboBoxItem Content="Current Fight"/><ComboBoxItem Content="Overall"/></ComboBox>
    </Grid>
-   <Grid Grid.Row="2" Margin="12,4,12,6">
+   <Grid x:Name="ContentGrid" Grid.Row="2" Margin="12,4,12,6">
     <Grid.ColumnDefinitions><ColumnDefinition Width="1.7*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
     <ListView x:Name="Rows" Background="#5A081326" BorderBrush="#284E7D" Foreground="#F4F7FF" SelectionChanged="PlayerSelected" MouseDoubleClick="OpenSelectedReport" ToolTip="Click a player for details • double-click for full report">
      <ListView.ItemTemplate><DataTemplate><Grid Height="42" Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="150"/><ColumnDefinition/><ColumnDefinition Width="76"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
