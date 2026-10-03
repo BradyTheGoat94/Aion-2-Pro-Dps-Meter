@@ -1178,6 +1178,39 @@ jobs:
             throw "Structured identity-name patch verification failed"
           }
 
+      - name: Promote verified identity IDs to combat names
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Identity IDs are now empirically confirmed to share the lifecycle entity
+          # namespace (e.g. otherInfo id=7701 and entityRemoved id=7701).
+          # Keep caching conservative: only a structurally validated character name
+          # from selfInfo/otherInfo/charLookup may populate the ID -> name cache.
+          $old = 'identities[id] = new PlayerIdentity(best, "Unknown");'
+          $new = 'identities[id] = new PlayerIdentity(best, "Unknown");' + [Environment]::NewLine +
+                 '        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped entity {id} -> {best}",d.Length));'
+          if ($s.Contains($old) -and $s -notmatch 'Mapped entity') {
+            $s = $s.Replace($old, $new)
+          }
+
+          # Persist an explicit mapping record so live tests can prove that any
+          # displayed name came from a validated identity packet.
+          $anchor = 'ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|nameOffset={nameOffset}|idCandidates={idCandidates}|bridgeFields={DescribeBridgeFields(d,start)}|bridgeStrings={DescribeBridgeStrings(d,start)}|raw={Convert.ToHexString(d)}");'
+          if ($s.Contains($anchor) -and $s -notmatch 'tag=identityMap') {
+            $s = $s.Replace($anchor, $anchor + [Environment]::NewLine +
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|source={packetKind}");')
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'Mapped entity' -or
+              $verify -notmatch 'tag=identityMap' -or
+              $verify -notmatch 'ResolveName\(\(long\)actor') {
+            throw "Verified identity promotion patch failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
