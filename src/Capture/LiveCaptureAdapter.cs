@@ -93,7 +93,7 @@ public sealed class LiveCaptureAdapter : IDisposable
         foreach (var d in decoder.Decode(chunk, DateTime.UtcNow))
             EventReceived?.Invoke(new CombatEvent(DateTime.UtcNow, d.Kind, d.SourceId, d.Source,
                 d.TargetId, d.Target, d.Skill, d.Amount, d.DamageType,
-                d.CurrentHp, d.MaxHp, d.Effect, d.Stacks, d.SourceClass));
+                d.CurrentHp, d.MaxHp, d.Effect, d.Stacks, d.SourceClass, d.DamageFlags));
     }
 
     public void Dispose()
