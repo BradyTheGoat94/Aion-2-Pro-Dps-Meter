@@ -125,7 +125,8 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         RememberCombatEntity(actor);
         RememberCombatEntity(target);
         var dtype = DecodeType((byte)damageType, mods, direction);
-        Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} mods=0x{mods:X2} direction=0x{direction:X2} decoded={dtype}",d.Length));
+        var dflags = DecodeFlags((byte)damageType, mods, direction);
+        Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} mods=0x{mods:X2} direction=0x{direction:X2} decoded={dtype} flags={dflags}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=damageFlags|actor={actor}|target={target}|skill={SkillName(checked((int)skill))}|rawType={damageType}|mods=0x{mods:X2}|direction=0x{direction:X2}|decoded={dtype}|crit={damageType==3}|parry={(mods&0x02)!=0}|perfect={(mods&0x04)!=0}|double={(mods&0x08)!=0}|back={direction==1}|front={direction==2}");
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
@@ -142,7 +143,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         long currentHp = 0, maxHp = 0;
         if (mobs.TryGetValue(targetId, out var mobState)) { currentHp = mobState.CurrentHp; maxHp = mobState.MaxHp; }
         return new(CombatKind.Damage, actorId, actorName, targetId, targetName,
-            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass);
+            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass, dflags);
     }
 
     private Aion2Decoded? TryDot(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -873,6 +874,16 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
 
     private static bool ReadV(ReadOnlySpan<byte> d, ref int p, out ulong value) {
         value=0; int shift=0; for(int n=0;n<10 && p<d.Length;n++) { byte b=d[p++]; value|=(ulong)(b&0x7F)<<shift; if((b&0x80)==0)return true; shift+=7; } value=0; return false;
+    }
+    private static DamageFlags DecodeFlags(byte t, byte mods, byte direction) {
+        DamageFlags f = DamageFlags.None;
+        if (t == 3) f |= DamageFlags.Critical;
+        if ((mods & 0x02)!=0) f |= DamageFlags.Parry;
+        if ((mods & 0x04)!=0) f |= DamageFlags.Perfect;
+        if ((mods & 0x08)!=0) f |= DamageFlags.Double;
+        if (direction == 0x01) f |= DamageFlags.Back;
+        if (direction == 0x02) f |= DamageFlags.Frontal;
+        return f;
     }
     private static DamageType DecodeType(byte t, byte mods, byte direction) {
         if (t == 3) return DamageType.Crit;
