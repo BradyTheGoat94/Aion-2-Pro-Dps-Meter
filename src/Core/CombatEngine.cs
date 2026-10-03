@@ -15,8 +15,8 @@ public sealed class CombatEngine
     private Encounter overall = new();
     private DateTime? latestUtc;
     public bool PreviewMode { get; set; }
-    public TimeSpan InactivityTimeout { get; set; } = TimeSpan.FromSeconds(30);
-    public TimeSpan BossInactivityTimeout { get; set; } = TimeSpan.FromSeconds(120);
+    public TimeSpan InactivityTimeout { get; set; } = TimeSpan.FromSeconds(8);
+    public TimeSpan BossInactivityTimeout { get; set; } = TimeSpan.FromSeconds(8);
     public event Action<MeterSnapshot>? EncounterCompleted;
     public CombatEngine(Func<DateTime>? clock = null) => this.clock = clock ?? (() => DateTime.UtcNow);
     public IReadOnlyList<MeterSnapshot> History { get { lock(gate) return history.Select(x => Build(x, MeterCategory.Damage, false)).ToArray(); } }
@@ -189,6 +189,10 @@ public sealed class CombatEngine
         if(history.Count>100) history.RemoveAt(0);
         overall.CompletedDuration+=current.Duration;
         overall.LastActivity=null;overall.ActorLast.Clear();
+        // A completed encounter belongs to history immediately. Current should
+        // be empty after the inactivity window instead of continuing to display
+        // stale fight totals until the next damage event arrives.
+        current=new Encounter();
         return result;
     }
     public void ResetFight()
