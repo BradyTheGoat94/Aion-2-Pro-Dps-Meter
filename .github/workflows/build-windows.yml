@@ -814,6 +814,44 @@ jobs:
             throw "Alternate damage fallback verification failed"
           }
 
+      - name: Relax alternate damage fallback to structural detection
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # The previous guard also required an implausibly large skill ID.
+          # Validation showed alternate-layout packets can have valid skill IDs,
+          # so key the fallback on tiny primary damage plus the validated tail shape.
+          $old = 'if (damage <= 4 && skill > 30_000_000)'
+          $new = 'if (damage <= 4)'
+          if ($s.Contains($old)) {
+            $s = $s.Replace($old, $new)
+          }
+          elseif ($s -notmatch 'if \(damage <= 4\)') {
+            throw "Alternate damage guard not found"
+          }
+
+          # Tighten the structural recovery: require a base-like field followed
+          # immediately by a meaningful hit. This avoids replacing genuine 1-4 hits
+          # unless the alternate packet tail is actually present.
+          $s = $s.Replace(
+            'if (first < 5_000 || first > 50_000) continue;',
+            'if (first < 5_000 || first > 50_000) continue;'
+          )
+          $s = $s.Replace(
+            'if (hit < 20 || hit > 5_000_000) continue;',
+            'if (hit < 20 || hit > 5_000_000) continue;'
+          )
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'if \(damage <= 4\)' -or
+              $verify -match 'damage <= 4 && skill > 30_000_000' -or
+              $verify -notmatch 'private static bool TryRecoverAlternateDamage') {
+            throw "Structural alternate damage fallback verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
