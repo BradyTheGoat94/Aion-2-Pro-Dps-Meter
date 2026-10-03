@@ -179,10 +179,50 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         confirmedSummons.Add(summonId);
         ValidationRecord?.Invoke($"{utc:O}|tag=summonSpawn|summon={summonId}|kind=0x{kind:X2}");
 
-        // IMPORTANT: do not infer ownership from 36 08 strings in this spawn.
-        // Live validation showed that "Karma" here is SevenSins' guild/legion name,
-        // not the pet name or owner character name. Ownership must come from a
-        // validated owner-id relation (04 8D / parent_key), never this string.
+        // Prefer the structured parent_key/legion block carried by 41 36.
+        // Live capture 2026-10-03 proved this exact shape for SevenSins:
+        // parent_key=82824, legion_id=15, pad=0, server_id=2102, legion="Karma".
+        // The trailing string is legion metadata; the u32 parent_key is the owner.
+        if (TryFindSpawnParentKey(d, q, summonId, out var ownerId, out var legion))
+        {
+            summonOwners[summonId] = ownerId;
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={ownerId}|source=4136-parent-key|legion={legion}");
+        }
+    }
+
+    private bool TryFindSpawnParentKey(ReadOnlySpan<byte> d, int searchFrom, long summonId, out long ownerId, out string legion)
+    {
+        ownerId = 0;
+        legion = "";
+        int end = Math.Min(d.Length - 13, searchFrom + 180);
+        for (int i = Math.Max(0, searchFrom); i <= end; i++)
+        {
+            uint parent = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(i, 4));
+            if (parent == 0 || parent > 9_999_999 || parent == summonId) continue;
+
+            uint legionId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(i + 4, 4));
+            ushort pad = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i + 8, 2));
+            ushort serverId = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i + 10, 2));
+            int nameLen = d[i + 12];
+            if (pad != 0 || serverId == 0 || serverId > 9_999 || nameLen > 40 || i + 13 + nameLen > d.Length)
+                continue;
+
+            string candidate;
+            try { candidate = System.Text.Encoding.UTF8.GetString(d.Slice(i + 13, nameLen)); }
+            catch { continue; }
+            if (nameLen > 0 && candidate.Any(char.IsControl)) continue;
+
+            // Strong final guard: owner must already be independently known as a
+            // player/party/combat entity. This keeps random packet bytes from merging rows.
+            long p64 = parent;
+            if (!identities.ContainsKey(p64) && !partyIdentities.ContainsKey(p64) && !recentCombatEntityIds.Contains(p64))
+                continue;
+
+            ownerId = p64;
+            legion = candidate;
+            return true;
+        }
+        return false;
     }
 
     private Aion2Decoded? TrySummonOwnership(ReadOnlySpan<byte> d, int p, DateTime utc)
