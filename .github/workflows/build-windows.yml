@@ -1807,6 +1807,47 @@ jobs:
           $v = Get-Content $p -Raw
           if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
+      - name: Resolve validated combat skill names
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          if ($s -notmatch 'private static string SkillName') {
+            $helper = @(
+              '    private static string SkillName(int skill)',
+              '    {',
+              '        // Packet variants carry specialization/level suffixes. The base skill is the 10,000 bucket.',
+              '        int baseId = skill >= 1_000_000 ? (skill / 10000) * 10000 : skill;',
+              '        return baseId switch',
+              '        {',
+              '            14010000 => "Deadshot",',
+              '            14340000 => "Tempest Shot",',
+              '            14800000 => "Hunter''s Soul",',
+              '            14080000 => "Burst Arrow",',
+              '            14090000 => "Marking Shot",',
+              '            16040000 => "Combustion",',
+              '            12060000 => "Punishing Strike",',
+              '            _ => $"Skill {skill}"',
+              '        };',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for skill names" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+
+          # Change display text only. Keep numeric skill IDs and parser/class logic untouched.
+          $s = $s.Replace('$"Skill {skill}"', 'SkillName(skill)')
+          $s = $s.Replace('$"Skill {(int)skill}"', 'SkillName((int)skill)')
+
+          Set-Content $p $s
+          $v = Get-Content $p -Raw
+          if ($v -notmatch '14010000 => "Deadshot"' -or $v -notmatch '14340000 => "Tempest Shot"' -or $v -notmatch 'SkillName\(skill\)') {
+            throw "Skill name resolver patch failed"
+          }
+
       - name: Preserve validated class per combat actor
         shell: pwsh
         run: |
