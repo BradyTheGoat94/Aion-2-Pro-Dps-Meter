@@ -1839,8 +1839,8 @@ jobs:
           }
 
           # Change display text only. Keep numeric skill IDs and parser/class logic untouched.
-          $s = $s.Replace('$"Skill {skill}"', 'SkillName(skill)')
-          $s = $s.Replace('$"Skill {(int)skill}"', 'SkillName((int)skill)')
+          $s = $s.Replace('$"Skill {skill}"', 'SkillName(checked((int)skill))')
+          $s = $s.Replace('$"Skill {(int)skill}"', 'SkillName(checked((int)skill))')
 
           Set-Content $p $s
           $v = Get-Content $p -Raw
