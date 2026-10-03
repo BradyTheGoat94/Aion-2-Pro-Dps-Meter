@@ -47,6 +47,11 @@ internal static class Program
    Packet(50001,"193336FD235F81C1283708546573744865726F000000");
    Packet(50002,"210438E3A0020400FD2340B7B70009020B95C34701000000D658E7020100");
    if(captureEngine.Snapshot().Players.Single().Name!="TestHero")throw new Exception("Identity-only connection did not resolve combat name");
+   // The latest captured self ID changes after reconnect; never carry a name across generations.
+   t=t.AddSeconds(31);
+   Packet(50003,"193336AD5F5F91C1283708546573744865726F000000");
+   Packet(50004,"240438E3A0020600AD5F40B7B70002020000020B95C34701000000AC5881030100");
+   if(!captureEngine.Snapshot().Players.Any(p=>p.EntityId==12205&&p.Name=="TestHero"))throw new Exception("Reconnect identity did not resolve new self entity");
    adapter.Dispose();adapter.Completion.GetAwaiter().GetResult();
   }
   Console.WriteLine("PASS: separate identity/combat sockets resolve exact actor name");
