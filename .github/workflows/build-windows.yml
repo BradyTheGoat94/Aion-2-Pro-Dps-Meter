@@ -676,6 +676,64 @@ jobs:
             throw "Damage parser verification failed"
           }
 
+      - name: Add post-skill damage candidate tracing
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Preserve the byte position reached by the corrected skill-field reader.
+          $needle = 'if (!TryReadSkillField(d, ref p, out var skill)) return null;'
+          if ($s.Contains($needle) -and $s -notmatch 'int postSkillPos = p;') {
+            $s = $s.Replace($needle, $needle + [Environment]::NewLine + '        int postSkillPos = p;')
+          }
+
+          # Enrich only recognized damage validation records with candidate varints.
+          $traceNeedle = 'ValidationRecord?.Invoke($"{utc:O}|tag={kind}|src={evt.SourceId}|tgt={evt.TargetId}|skill={evt.Skill}|amount={evt.Amount}|type={evt.DamageType}|raw={Convert.ToHexString(frame)}");'
+          if ($s.Contains($traceNeedle)) {
+            $traceReplacement = 'var candidates = kind == "damage" ? DescribeVarintCandidates(frame, FindPostSkillPosition(frame, p+2)) : "";' + [Environment]::NewLine + '      ValidationRecord?.Invoke($"{utc:O}|tag={kind}|src={evt.SourceId}|tgt={evt.TargetId}|skill={evt.Skill}|amount={evt.Amount}|type={evt.DamageType}|candidates={candidates}|raw={Convert.ToHexString(frame)}");'
+            $s = $s.Replace($traceNeedle, $traceReplacement)
+          }
+
+          if ($s -notmatch 'private static string DescribeVarintCandidates') {
+            $helperLines = @(
+              '    private static int FindPostSkillPosition(ReadOnlySpan<byte> d, int p)',
+              '    {',
+              '        if (!ReadV(d, ref p, out _)) return -1;',
+              '        if (!ReadV(d, ref p, out _)) return -1;',
+              '        if (!ReadV(d, ref p, out _)) return -1;',
+              '        if (!ReadV(d, ref p, out _)) return -1;',
+              '        if (!TryReadSkillField(d, ref p, out _)) return -1;',
+              '        return p;',
+              '    }',
+              '',
+              '    private static string DescribeVarintCandidates(ReadOnlySpan<byte> d, int start)',
+              '    {',
+              '        if (start < 0 || start >= d.Length) return "none";',
+              '        var parts = new List<string>();',
+              '        int p = start;',
+              '        for (int n = 0; n < 12 && p < d.Length; n++)',
+              '        {',
+              '            int at = p;',
+              '            if (!ReadV(d, ref p, out var value)) break;',
+              '            parts.Add($"{at}:{value}");',
+              '        }',
+              '        return string.Join(",", parts);',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for candidate tracer" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'DescribeVarintCandidates' -or $verify -notmatch 'candidates=') {
+            throw "Candidate tracer verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
