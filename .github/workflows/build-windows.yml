@@ -885,6 +885,79 @@ jobs:
             throw "Crit classification patch verification failed"
           }
 
+      - name: Add conservative player identity cache
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Add an in-dispatcher identity cache. Identity packets are experimental:
+          # only accept a printable UTF-8 name tied to a plausible entity varint.
+          if ($s -notmatch 'Dictionary<long, PlayerIdentity> identities') {
+            $s = $s.Replace(
+              'private readonly ProtocolProfile profile;',
+              'private readonly ProtocolProfile profile;' + [Environment]::NewLine + '    private readonly Dictionary<long, PlayerIdentity> identities = new();'
+            )
+          }
+
+          # Observe identity-bearing packet families without emitting combat damage.
+          $switchOld = '"bossHp" => TryBossHp(frame, p+2, utc),'
+          $switchNew = '"bossHp" => TryBossHp(frame, p+2, utc),' + [Environment]::NewLine + '            "selfInfo" => ObserveIdentity(frame, p+2, utc, "selfInfo"),' + [Environment]::NewLine + '            "otherInfo" => ObserveIdentity(frame, p+2, utc, "otherInfo"),' + [Environment]::NewLine + '            "charLookup" => ObserveIdentity(frame, p+2, utc, "charLookup"),'
+          if ($s.Contains($switchOld) -and $s -notmatch '"selfInfo" => ObserveIdentity') {
+            $s = $s.Replace($switchOld, $switchNew)
+          }
+
+          # Resolve source/target display names on damage events from cached identities.
+          $returnOld = 'return new(CombatKind.Damage, actor, $"Actor {actor}", target, $"Target {target}",'
+          $returnNew = 'var sourceName = ResolveName((long)actor, "Actor");' + [Environment]::NewLine + '        var targetName = ResolveName((long)target, "Target");' + [Environment]::NewLine + '        return new(CombatKind.Damage, actor, sourceName, target, targetName,'
+          if ($s.Contains($returnOld)) { $s = $s.Replace($returnOld, $returnNew) }
+
+          if ($s -notmatch 'private Aion2Decoded\? ObserveIdentity') {
+            $helperLines = @(
+              '    private sealed record PlayerIdentity(string Name, string ClassName);',
+              '',
+              '    private string ResolveName(long id, string fallback)',
+              '        => identities.TryGetValue(id, out var x) ? x.Name : $"{fallback} {id}";',
+              '',
+              '    private Aion2Decoded? ObserveIdentity(ReadOnlySpan<byte> d, int p, DateTime utc, string packetKind)',
+              '    {',
+              '        int start = p;',
+              '        if (!ReadV(d, ref p, out var rawId) || rawId == 0 || rawId > long.MaxValue) return null;',
+              '        long id = (long)rawId;',
+              '        string? best = null;',
+              '        for (int i = p; i < d.Length; i++)',
+              '        {',
+              '            int max = Math.Min(24, d.Length - i);',
+              '            for (int len = 3; len <= max; len++)',
+              '            {',
+              '                var slice = d.Slice(i, len);',
+              '                bool printable = true;',
+              '                for (int j = 0; j < slice.Length; j++)',
+              '                    if (slice[j] < 0x20 || slice[j] > 0x7E) { printable = false; break; }',
+              '                if (!printable) break;',
+              '                var text = System.Text.Encoding.UTF8.GetString(slice);',
+              '                if (text.All(ch => char.IsLetterOrDigit(ch) || ch == ''_'' || ch == ''-'' || ch == '' '')) best = text.Trim();',
+              '            }',
+              '        }',
+              '        if (string.IsNullOrWhiteSpace(best) || best.Length < 3) { Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name",d.Length)); return null; }',
+              '        identities[id] = new PlayerIdentity(best, "Unknown");',
+              '        Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best}",d.Length));',
+              '        return new(CombatKind.PlayerName,id,best,0,"","",0,DamageType.Unknown,0,0,"",0);',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for identity helper" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'ObserveIdentity' -or $verify -notmatch 'Dictionary<long, PlayerIdentity>' -or $verify -notmatch 'ResolveName') {
+            throw "Identity cache patch verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
