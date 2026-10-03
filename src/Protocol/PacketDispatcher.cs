@@ -11,6 +11,7 @@ public sealed class PacketDispatcher
     private readonly Dictionary<long, long> sessionToGlobal = new();
     private readonly Dictionary<long, PlayerIdentity> partyIdentities = new();
     private readonly HashSet<long> recentCombatEntityIds = new();
+    private readonly Dictionary<long, MobIdentity> mobs = new();
     public event Action<DecoderDiagnostic>? Diagnostic;
     public event Action<string>? ValidationRecord;
     public PacketDispatcher(ProtocolProfile profile) => this.profile = profile;
@@ -28,6 +29,15 @@ public sealed class PacketDispatcher
             yield break;
         }
         
+// Current Global references expose remaining HP on 00 8D in addition to the
+        // configured 01 8D boss-HP opcode.
+        if (a == 0x00 && b == 0x8D)
+        {
+            var hpEvt = TryRemainHp(frame, p + 2, utc);
+            if (hpEvt is not null) yield return hpEvt;
+            yield break;
+        }
+
 var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
         if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
 
@@ -41,11 +51,19 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (embeddedIdentity is not null)
             yield return embeddedIdentity;
 
+        if (kind == "mobSpawn")
+        {
+            var identityEvt = ObserveEntityBridge(frame, p + 2, utc, "mobSpawn");
+            if (identityEvt is not null) yield return identityEvt;
+            var mobEvt = TryMobSpawn(frame, p + 2, utc);
+            if (mobEvt is not null) yield return mobEvt;
+            yield break;
+        }
+
         Aion2Decoded? evt = kind switch {
             "damage" => TryDamage(frame, p+2, utc),
             "dot" => TryDot(frame, p+2, utc),
             "bossHp" => TryBossHp(frame, p+2, utc),
-            "mobSpawn" => ObserveEntityBridge(frame, p+2, utc, "mobSpawn"),
             "entityRemoved" => ObserveEntityBridge(frame, p+2, utc, "entityRemoved"),
             "selfInfo" => ObserveSelfIdentity(frame, p+2, utc),
             "otherInfo" => ObserveIdentity(frame, p+2, utc, "otherInfo"),
@@ -95,8 +113,11 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         var actorName = ResolveName(actorId, "Actor");
         var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
             ? knownIdentity.ClassName : ClassFromSkill(skill);
-        return new(CombatKind.Damage, actorId, actorName, targetId, ResolveName(targetId, "Target"),
-            SkillName(checked((int)skill)), (long)damage, dtype, 0,0,"",0, actorClass);
+        var targetName = ResolveTargetName(targetId);
+        long currentHp = 0, maxHp = 0;
+        if (mobs.TryGetValue(targetId, out var mobState)) { currentHp = mobState.CurrentHp; maxHp = mobState.MaxHp; }
+        return new(CombatKind.Damage, actorId, actorName, targetId, targetName,
+            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass);
     }
 
     private Aion2Decoded? TryDot(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -120,15 +141,90 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
     }
 
+    private string ResolveTargetName(long id)
+        => mobs.TryGetValue(id, out var mob) ? mob.Name : ResolveName(id, "Target");
+
+    private Aion2Decoded? TryMobSpawn(ReadOnlySpan<byte> d, int p, DateTime utc)
+    {
+        if (!ReadV(d, ref p, out var entityU) || entityU == 0 || entityU > long.MaxValue) return null;
+        long entity = (long)entityU;
+        int searchFrom = p;
+        int searchLimit = Math.Min(searchFrom + 60, d.Length - 2);
+        int marker = -1;
+        for (int i = searchFrom; i < searchLimit; i++)
+        {
+            if (i + 2 < d.Length && d[i] == 0 && (d[i + 1] & 0xBF) == 0 && d[i + 2] == 2)
+            { marker = i + 2; break; }
+        }
+        if (marker < 5) return null;
+        int codePos = marker - 5;
+        if (codePos < 0 || codePos + 3 > d.Length) return null;
+        int mobCode = d[codePos] | (d[codePos + 1] << 8) | (d[codePos + 2] << 16);
+        if (mobCode <= 0) return null;
+
+        long maxHp = 0;
+        int hpFrom = marker + 1;
+        int hpTo = Math.Min(marker + 67, d.Length - 2);
+        for (int i = hpFrom; i < hpTo; i++)
+        {
+            if (d[i] != 1) continue;
+            int q = i + 1;
+            if (!ReadV(d, ref q, out var maxU) || maxU == 0 || maxU > long.MaxValue) continue;
+            if (!ReadV(d, ref q, out var curU) || curU > long.MaxValue) continue;
+            if (curU < maxU) continue;
+            maxHp = (long)curU;
+            break;
+        }
+
+        string name = PublicGameData.MobName(mobCode) ?? $"Target {entity}";
+        mobs[entity] = new MobIdentity(mobCode, name, maxHp, maxHp);
+        ValidationRecord?.Invoke($"{utc:O}|tag=mobIdentity|entity={entity}|mobCode={mobCode}|name={name}|maxHp={maxHp}");
+        if (maxHp > 0)
+            return new(CombatKind.TargetHp,0,"",entity,name,"",0,DamageType.Unknown,maxHp,maxHp,"",0);
+        return null;
+    }
+
     private Aion2Decoded? TryBossHp(ReadOnlySpan<byte> d, int p, DateTime utc)
     {
-        if (!ReadV(d,ref p,out var entity) || entity==0) return null;
-        // Layout varies; conservatively scan the remaining payload for two plausible adjacent varints.
-        for(int i=p;i<d.Length;i++) { int q=i; if(!ReadV(d,ref q,out var cur)) continue; if(!ReadV(d,ref q,out var max)) continue;
-            if(max>0 && cur<=max && max>=1000 && max<=long.MaxValue)
-                return new(CombatKind.TargetHp,0,"",checked((long)entity),$"Target {entity}","",0,DamageType.Unknown,(long)cur,(long)max,"",0);
+        if (!ReadV(d,ref p,out var entityU) || entityU==0 || entityU>long.MaxValue) return null;
+        long entity=(long)entityU;
+
+        // A2Meter Global layout: entity varint, 02 01 00, current HP LE32, zero LE32.
+        if (p + 11 <= d.Length && d[p] == 2 && d[p+1] == 1 && d[p+2] == 0)
+        {
+            p += 3;
+            long hp = (uint)(d[p] | (d[p+1] << 8) | (d[p+2] << 16) | (d[p+3] << 24));
+            long max = mobs.TryGetValue(entity, out var known) ? known.MaxHp : 0;
+            string name = mobs.TryGetValue(entity, out known) ? known.Name : $"Target {entity}";
+            if (mobs.TryGetValue(entity, out known))
+                mobs[entity] = known with { CurrentHp = hp, MaxHp = Math.Max(known.MaxHp, hp) };
+            max = mobs.TryGetValue(entity, out known) ? known.MaxHp : max;
+            ValidationRecord?.Invoke($"{utc:O}|tag=targetHp|entity={entity}|current={hp}|max={max}|name={name}|source=018D");
+            if (max > 0) return new(CombatKind.TargetHp,0,"",entity,name,"",0,DamageType.Unknown,hp,max,"",0);
         }
         return null;
+    }
+
+    private Aion2Decoded? TryRemainHp(ReadOnlySpan<byte> d, int p, DateTime utc)
+    {
+        if (!ReadV(d, ref p, out var entityU) || entityU == 0 || entityU > long.MaxValue) return null;
+        long entity = (long)entityU;
+        // RATmeter Global layout: entity, three varints, then current HP as LE64.
+        for (int n=0;n<3;n++) if (!ReadV(d, ref p, out _)) return null;
+        if (p + 8 > d.Length) return null;
+        ulong hpU = 0;
+        for (int i=0;i<8;i++) hpU |= (ulong)d[p+i] << (8*i);
+        if (hpU > long.MaxValue) return null;
+        long hp = (long)hpU;
+        if (!mobs.TryGetValue(entity, out var known))
+        {
+            ValidationRecord?.Invoke($"{utc:O}|tag=targetHpCandidate|entity={entity}|current={hp}|max=0|source=008D");
+            return null;
+        }
+        long max = Math.Max(known.MaxHp, hp);
+        mobs[entity] = known with { CurrentHp = hp, MaxHp = max };
+        ValidationRecord?.Invoke($"{utc:O}|tag=targetHp|entity={entity}|current={hp}|max={max}|name={known.Name}|source=008D");
+        return new(CombatKind.TargetHp,0,"",entity,known.Name,"",0,DamageType.Unknown,hp,max,"",0);
     }
 
     private static bool IsPlausibleSkillCode(int code)
@@ -214,6 +310,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
     }
 
     private sealed record PlayerIdentity(string Name, string ClassName);
+    private sealed record MobIdentity(int Code, string Name, long MaxHp, long CurrentHp);
 
     private string ResolveName(long id, string fallback)
         => identities.TryGetValue(id, out var x) ? x.Name : $"{fallback} {id}";
