@@ -470,6 +470,27 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
     private string ResolveName(long id, string fallback)
         => identities.TryGetValue(id, out var x) ? x.Name : $"{fallback} {id}";
 
+    private void RememberGlobalPlayerIdentity(long globalId, string name, string className, DateTime utc, string source)
+    {
+        if (globalId <= 0 || string.IsNullOrWhiteSpace(name)) return;
+        var resolvedClass = className;
+        if (resolvedClass == "Unknown" && identities.TryGetValue(globalId, out var existing))
+            resolvedClass = existing.ClassName;
+
+        var identity = new PlayerIdentity(name, resolvedClass);
+        identities[globalId] = identity;
+        globalPlayerNames[globalId] = name;
+
+        // A 20 36 packet can link the stable/global character id to the
+        // short-lived combat/session id. Names may arrive before or after that
+        // link, so promote in both directions whenever either side becomes known.
+        foreach (var link in sessionToGlobal.Where(x => x.Value == globalId).ToArray())
+        {
+            identities[link.Key] = identity;
+            ValidationRecord?.Invoke($"{utc:O}|tag=lateGlobalSessionName|session={link.Key}|global={globalId}|name={name}|class={resolvedClass}|source={source}");
+        }
+    }
+
     private Aion2Decoded? ObserveIdentity(ReadOnlySpan<byte> d, int p, DateTime utc, string packetKind)
     {
         int start = p;
@@ -482,13 +503,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (string.IsNullOrWhiteSpace(best) || best.Length < 3) { var failedCandidates = DescribeIdentityCandidates(d, start);
         Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={failedCandidates}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name=|idCandidates={failedCandidates}|raw={Convert.ToHexString(d)}"); return null; }
-        identities[id] = new PlayerIdentity(best, "Unknown");
-        globalPlayerNames[id] = best;
-        foreach (var link in sessionToGlobal.Where(x => x.Value == id).ToArray())
-        {
-            identities[link.Key] = new PlayerIdentity(best, "Unknown");
-            ValidationRecord?.Invoke($"{utc:O}|tag=lateGlobalSessionName|session={link.Key}|global={id}|name={best}");
-        }
+        RememberGlobalPlayerIdentity(id, best, "Unknown", utc, packetKind);
         Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped entity {id} -> {best}",d.Length));
         var idCandidates = DescribeIdentityCandidates(d, start);
         Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best} idCandidates={idCandidates}",d.Length));
@@ -714,7 +729,8 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         p += 4;
         int serverId = d[p] | (d[p+1] << 8);
         if (entityId <= 0 || entityId > int.MaxValue) return null;
-        identities[entityId] = new PlayerIdentity(name, "Unknown");
+        string lookupClass = jobCode switch { 11 => "Gladiator", 12 => "Templar", 13 => "Assassin", 14 => "Ranger", 15 => "Sorcerer", 16 => "Spiritmaster", 17 => "Cleric", 18 => "Chanter", _ => "Unknown" };
+        RememberGlobalPlayerIdentity(entityId, name, lookupClass, utc, "charLookup");
         var combatHit = recentCombatEntityIds.Contains(entityId) ? "YES" : "NO";
         Diagnostic?.Invoke(new(utc,"char-lookup",$"Mapped lookup entity {entityId} -> {name} job={jobCode} level={level} server={serverId} combatMatch={combatHit}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=charLookupIdentity|entity={entityId}|name={name}|job={jobCode}|level={level}|server={serverId}|combatMatch={combatHit}|raw={Convert.ToHexString(d)}");
@@ -750,13 +766,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             return null;
         }
         selfEntityId=id;
-        identities[id] = new PlayerIdentity(best, "Unknown");
-        globalPlayerNames[id] = best;
-        foreach (var link in sessionToGlobal.Where(x => x.Value == id).ToArray())
-        {
-            identities[link.Key] = new PlayerIdentity(best, "Unknown");
-            ValidationRecord?.Invoke($"{utc:O}|tag=lateGlobalSessionName|session={link.Key}|global={id}|name={best}");
-        }
+        RememberGlobalPlayerIdentity(id, best, "Unknown", utc, "selfInfo");
         Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped self entity {id} -> {best}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name={best}|nameOffset={nameOffset}|raw={Convert.ToHexString(d)}");
         ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|source=selfInfo");
@@ -802,7 +812,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
                 }
             }
             partyIdentities[id] = new PlayerIdentity(name, className);
-            identities[id] = new PlayerIdentity(name, className);
+            RememberGlobalPlayerIdentity(id, name, className, utc, "party");
             ValidationRecord?.Invoke($"{utc:O}|tag=partyIdentity|opcode=0x{opcode:X2}|entity={id}|name={name}|server={sid}|jobCode={jobCode}|class={className}|level={level}|combatMatch={recentCombatEntityIds.Contains(id)}");
             Diagnostic?.Invoke(new(utc,"party-identity",$"Mapped party entity {id} -> {name} class={className} job={jobCode} level={level} server={sid}",d.Length));
             if (emitted.Add(id))
@@ -867,10 +877,18 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         long globalId = global;
         sessionToGlobal[session] = globalId;
         ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionLink|session={session}|global={globalId}|offset={tagOffset}|raw={Convert.ToHexString(d)}");
-        if (!globalPlayerNames.TryGetValue(globalId, out var name) || string.IsNullOrWhiteSpace(name)) return null;
-        identities[session] = new PlayerIdentity(name, "Unknown");
-        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={name}");
-        return new(CombatKind.PlayerName,session,name,0,"","",0,DamageType.Unknown,0,0,"",0);
+        PlayerIdentity? known = null;
+        if (identities.TryGetValue(globalId, out var direct))
+            known = direct;
+        else if (partyIdentities.TryGetValue(globalId, out var party))
+            known = party;
+        else if (globalPlayerNames.TryGetValue(globalId, out var globalName) && !string.IsNullOrWhiteSpace(globalName))
+            known = new PlayerIdentity(globalName, "Unknown");
+
+        if (known is null || string.IsNullOrWhiteSpace(known.Name)) return null;
+        identities[session] = known;
+        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={known.Name}|class={known.ClassName}");
+        return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0);
     }
 
     private Aion2Decoded? TryEmbeddedGlobalSessionLink(ReadOnlySpan<byte> d, DateTime utc)
