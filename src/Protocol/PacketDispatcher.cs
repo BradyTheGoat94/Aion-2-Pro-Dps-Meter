@@ -12,6 +12,7 @@ public sealed class PacketDispatcher
     private readonly Dictionary<long, PlayerIdentity> partyIdentities = new();
     private readonly HashSet<long> recentCombatEntityIds = new();
     private readonly Dictionary<long, MobIdentity> mobs = new();
+    private readonly Dictionary<long, long> summonOwners = new();
     public event Action<DecoderDiagnostic>? Diagnostic;
     public event Action<string>? ValidationRecord;
     public PacketDispatcher(ProtocolProfile profile) => this.profile = profile;
@@ -55,6 +56,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         {
             var identityEvt = ObserveEntityBridge(frame, p + 2, utc, "mobSpawn");
             if (identityEvt is not null) yield return identityEvt;
+            TryRegisterSummonOwner(frame, p + 2, utc);
             var mobEvt = TryMobSpawn(frame, p + 2, utc);
             if (mobEvt is not null) yield return mobEvt;
             yield break;
@@ -110,6 +112,12 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} flagByte=0x{flagByte:X2} decoded={dtype}",d.Length));
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
+        long originalActorId = actorId;
+        if (summonOwners.TryGetValue(actorId, out var ownerId))
+        {
+            actorId = ownerId;
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonDamage|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={damage}");
+        }
         var actorName = ResolveName(actorId, "Actor");
         var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
             ? knownIdentity.ClassName : ClassFromSkill(skill);
@@ -134,11 +142,46 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (damage<=0 && heal<=0) return null;
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
+        long originalActorId = actorId;
+        if (summonOwners.TryGetValue(actorId, out var ownerId))
+        {
+            actorId = ownerId;
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonDot|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={(damage>0?damage:(long)heal)}");
+        }
         var actorName = ResolveName(actorId, "Actor");
         var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
             ? knownIdentity.ClassName : ClassFromSkill((int)skill);
         return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveName(targetId, "Target"),
             SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
+    }
+
+    private void TryRegisterSummonOwner(ReadOnlySpan<byte> d, int p, DateTime utc)
+    {
+        int start = p;
+        if (!ReadV(d, ref p, out var summonU) || summonU == 0 || summonU > long.MaxValue) return;
+        long summonId = (long)summonU;
+
+        // Global 41 36 summon records contain an FF*8 boundary followed by an
+        // owner header (07 02 06 or 07 02 01). RATmeter independently uses this
+        // structure. Require the candidate owner to be a known/recent combat
+        // entity so ordinary NPC spawns cannot be accidentally merged.
+        ReadOnlySpan<byte> boundary = stackalloc byte[] { 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF };
+        int relBoundary = d.Slice(start).IndexOf(boundary);
+        if (relBoundary < 0) return;
+        int after = start + relBoundary + 8;
+        int limit = Math.Min(d.Length - 5, after + 160);
+        for (int i = after; i <= limit; i++)
+        {
+            bool header = d[i] == 0x07 && d[i+1] == 0x02 && (d[i+2] == 0x06 || d[i+2] == 0x01);
+            if (!header) continue;
+            long ownerId = d[i+3] | ((long)d[i+4] << 8);
+            if (ownerId <= 1 || ownerId == summonId) continue;
+            if (!recentCombatEntityIds.Contains(ownerId) && !identities.ContainsKey(ownerId) && !partyIdentities.ContainsKey(ownerId))
+                continue;
+            summonOwners[summonId] = ownerId;
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={ownerId}|source=4136-boundary");
+            return;
+        }
     }
 
     private string ResolveTargetName(long id)
