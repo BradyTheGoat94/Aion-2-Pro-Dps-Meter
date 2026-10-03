@@ -1638,6 +1638,13 @@ jobs:
           $s = $s.Replace('-> {name} server={sid}', '-> {name} class={className} job={jobCode} level={level} server={sid}')
           Set-Content $p $s
 
+          $decoded = "src/Protocol/IAion2Decoder.cs"
+          $a = Get-Content $decoded -Raw
+          if ($a -notmatch 'Aion2Decoded[\s\S]*SourceClass') {
+            $a = $a.Replace('string Effect = "", int Stacks = 0);', 'string Effect = "", int Stacks = 0, string SourceClass = "Unknown");')
+          }
+          Set-Content $decoded $a
+
           $cap = "src/Capture/LiveCaptureAdapter.cs"
           $c = Get-Content $cap -Raw
           $oldEvent = 'd.CurrentHp, d.MaxHp, d.Effect, d.Stacks));'
@@ -1647,7 +1654,8 @@ jobs:
 
           $verify = Get-Content $p -Raw
           $verifyCap = Get-Content $cap -Raw
-          if ($verify -notmatch 'jobCode=\{jobCode\}' -or $verify -notmatch 'new PlayerIdentity\(name, className\)' -or $verifyCap -notmatch 'd.SourceClass') { throw "Party class decode patch failed" }
+          $verifyDecoded = Get-Content $decoded -Raw
+          if ($verify -notmatch 'jobCode=\{jobCode\}' -or $verify -notmatch 'new PlayerIdentity\(name, className\)' -or $verifyCap -notmatch 'd.SourceClass' -or $verifyDecoded -notmatch 'SourceClass') { throw "Party class decode patch failed" }
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
