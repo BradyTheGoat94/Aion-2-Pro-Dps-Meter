@@ -1606,30 +1606,30 @@ jobs:
           $p = "src/Protocol/PacketDispatcher.cs"
           $s = Get-Content $p -Raw
           $old = '            long id = cid;'
-          $new = @'
-            long id = cid;
-            int afterName = off + 1 + len;
-            int jobCode = 0;
-            int level = 0;
-            string className = "Unknown";
-            if (afterName + 8 <= end)
-            {
-                jobCode = d[afterName] | (d[afterName+1] << 8) | (d[afterName+2] << 16) | (d[afterName+3] << 24);
-                level = d[afterName+4] | (d[afterName+5] << 8) | (d[afterName+6] << 16) | (d[afterName+7] << 24);
-                if (level >= 1 && level <= 55)
-                {
-                    if (jobCode >= 5 && jobCode <= 8) className = "Gladiator";
-                    else if (jobCode >= 9 && jobCode <= 12) className = "Templar";
-                    else if (jobCode >= 13 && jobCode <= 16) className = "Ranger";
-                    else if (jobCode >= 17 && jobCode <= 20) className = "Assassin";
-                    else if (jobCode >= 21 && jobCode <= 24) className = "Spiritmaster";
-                    else if (jobCode >= 25 && jobCode <= 28) className = "Sorcerer";
-                    else if (jobCode >= 29 && jobCode <= 32) className = "Cleric";
-                    else if (jobCode >= 33 && jobCode <= 36) className = "Chanter";
-                    else if (jobCode >= 37 && jobCode <= 40) className = "Fist";
-                }
-            }
-'@
+          $new = @(
+            '            long id = cid;',
+            '            int afterName = off + 1 + len;',
+            '            int jobCode = 0;',
+            '            int level = 0;',
+            '            string className = "Unknown";',
+            '            if (afterName + 8 <= end)',
+            '            {',
+            '                jobCode = d[afterName] | (d[afterName+1] << 8) | (d[afterName+2] << 16) | (d[afterName+3] << 24);',
+            '                level = d[afterName+4] | (d[afterName+5] << 8) | (d[afterName+6] << 16) | (d[afterName+7] << 24);',
+            '                if (level >= 1 && level <= 55)',
+            '                {',
+            '                    if (jobCode >= 5 && jobCode <= 8) className = "Gladiator";',
+            '                    else if (jobCode >= 9 && jobCode <= 12) className = "Templar";',
+            '                    else if (jobCode >= 13 && jobCode <= 16) className = "Ranger";',
+            '                    else if (jobCode >= 17 && jobCode <= 20) className = "Assassin";',
+            '                    else if (jobCode >= 21 && jobCode <= 24) className = "Spiritmaster";',
+            '                    else if (jobCode >= 25 && jobCode <= 28) className = "Sorcerer";',
+            '                    else if (jobCode >= 29 && jobCode <= 32) className = "Cleric";',
+            '                    else if (jobCode >= 33 && jobCode <= 36) className = "Chanter";',
+            '                    else if (jobCode >= 37 && jobCode <= 40) className = "Fist";',
+            '                }',
+            '            }'
+          ) -join [Environment]::NewLine
           if (-not $s.Contains($old)) { throw "Party member id anchor missing" }
           $s = $s.Replace($old, $new.TrimEnd())
           $s = $s.Replace('partyIdentities[id] = new PlayerIdentity(name, "Unknown");', 'partyIdentities[id] = new PlayerIdentity(name, className);')
