@@ -1430,6 +1430,96 @@ jobs:
             throw "Character lookup identity parser verification failed"
           }
 
+      - name: Apply validated names to combat events and decode self identity
+        shell: pwsh
+        run: |
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+
+          # The previous UI-only rename could not affect OverlayWindow because the
+          # overlay receives the original engine snapshot. Resolve the source name
+          # on the CombatEvent BEFORE CombatEngine aggregates it.
+          if ($main -notmatch 'e = e with \{ Source = resolvedSourceName \}') {
+            $needle = 'if (e.Kind == CombatKind.PlayerName && e.SourceId > 0 && !string.IsNullOrWhiteSpace(e.Source))' + [Environment]::NewLine +
+                      '                          liveEntityNames[e.SourceId] = e.Source;'
+            if (-not $main.Contains($needle)) { throw "Live identity event hook missing" }
+            $replacement = $needle + [Environment]::NewLine +
+              '                      if ((e.Kind == CombatKind.Damage || e.Kind == CombatKind.Heal) && e.SourceId > 0 && liveEntityNames.TryGetValue(e.SourceId, out var resolvedSourceName))' + [Environment]::NewLine +
+              '                          e = e with { Source = resolvedSourceName };'
+            $main = $main.Replace($needle, $replacement)
+          }
+
+          # Also fix the diagnostic grid projection; it used anonymous-property
+          # shorthand (p.Name), so the earlier exact replacement never touched it.
+          $main = $main.Replace('Rank=i+1, p.Name, Dps=', 'Rank=i+1, Name=ApplyLiveEntityNames(p.Name), Dps=')
+
+          Set-Content $mainPath $main
+
+          $dispatcherPath = "src/Protocol/PacketDispatcher.cs"
+          $d = Get-Content $dispatcherPath -Raw
+
+          # selfInfo uses a different name layout from otherInfo. The first player
+          # name is an early one-byte length-prefixed UTF-8/ASCII field (no 0x07
+          # marker). Decode it separately and publish a normal PlayerName event.
+          $oldSelf = '"selfInfo" => ObserveIdentity(frame, p+2, utc, "selfInfo"),'
+          $newSelf = '"selfInfo" => ObserveSelfIdentity(frame, p+2, utc),'
+          if ($d.Contains($oldSelf)) { $d = $d.Replace($oldSelf, $newSelf) }
+
+          if ($d -notmatch 'ObserveSelfIdentity\(ReadOnlySpan<byte>') {
+            $helperLines = @(
+              '    private Aion2Decoded? ObserveSelfIdentity(ReadOnlySpan<byte> d, int p, DateTime utc)',
+              '    {',
+              '        int start = p;',
+              '        if (!ReadV(d, ref p, out var idU) || idU == 0 || idU > long.MaxValue) return null;',
+              '        long id = (long)idU;',
+              '        string best = "";',
+              '        int nameOffset = -1;',
+              '        int end = Math.Min(d.Length - 1, p + 32);',
+              '        for (int i = p; i < end; i++)',
+              '        {',
+              '            int len = d[i];',
+              '            if (len < 3 || len > 24 || i + 1 + len > d.Length) continue;',
+              '            bool valid = true;',
+              '            for (int j = 0; j < len; j++)',
+              '            {',
+              '                byte b = d[i + 1 + j];',
+              '                if (!((b >= (byte)''A'' && b <= (byte)''Z'') || (b >= (byte)''a'' && b <= (byte)''z'') ||',
+              '                      (b >= (byte)''0'' && b <= (byte)''9'') || b == (byte)''_'' || b == (byte)''-'')) { valid = false; break; }',
+              '            }',
+              '            if (!valid) continue;',
+              '            best = System.Text.Encoding.UTF8.GetString(d.Slice(i + 1, len));',
+              '            nameOffset = i;',
+              '            break;',
+              '        }',
+              '        if (string.IsNullOrWhiteSpace(best)) {',
+              '            ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name=|status=no-name|raw={Convert.ToHexString(d)}");',
+              '            return null;',
+              '        }',
+              '        identities[id] = new PlayerIdentity(best, "Unknown");',
+              '        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped self entity {id} -> {best}",d.Length));',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name={best}|nameOffset={nameOffset}|raw={Convert.ToHexString(d)}");',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|source=selfInfo");',
+              '        return new(CombatKind.PlayerName, id, best, 0, "", "", 0, DamageType.Unknown, 0,0,"",0);',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $d.Contains($anchor)) { throw "ReadV anchor missing for self identity parser" }
+            $d = $d.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          Set-Content $dispatcherPath $d
+
+          $verifyMain = Get-Content $mainPath -Raw
+          $verifyDispatcher = Get-Content $dispatcherPath -Raw
+          if ($verifyMain -notmatch 'e = e with \{ Source = resolvedSourceName \}' -or
+              $verifyMain -notmatch 'Name=ApplyLiveEntityNames\(p.Name\)' -or
+              $verifyDispatcher -notmatch '"selfInfo" => ObserveSelfIdentity' -or
+              $verifyDispatcher -notmatch 'tag=selfIdentity') {
+            throw "Validated combat-name propagation/self identity patch failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
