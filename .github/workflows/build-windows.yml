@@ -1600,6 +1600,55 @@ jobs:
             throw "Party identity parser patch failed"
           }
 
+      - name: Decode party job class
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+          $old = '            long id = cid;'
+          $new = @'
+            long id = cid;
+            int afterName = off + 1 + len;
+            int jobCode = 0;
+            int level = 0;
+            string className = "Unknown";
+            if (afterName + 8 <= end)
+            {
+                jobCode = d[afterName] | (d[afterName+1] << 8) | (d[afterName+2] << 16) | (d[afterName+3] << 24);
+                level = d[afterName+4] | (d[afterName+5] << 8) | (d[afterName+6] << 16) | (d[afterName+7] << 24);
+                if (level >= 1 && level <= 55)
+                {
+                    if (jobCode >= 5 && jobCode <= 8) className = "Gladiator";
+                    else if (jobCode >= 9 && jobCode <= 12) className = "Templar";
+                    else if (jobCode >= 13 && jobCode <= 16) className = "Ranger";
+                    else if (jobCode >= 17 && jobCode <= 20) className = "Assassin";
+                    else if (jobCode >= 21 && jobCode <= 24) className = "Spiritmaster";
+                    else if (jobCode >= 25 && jobCode <= 28) className = "Sorcerer";
+                    else if (jobCode >= 29 && jobCode <= 32) className = "Cleric";
+                    else if (jobCode >= 33 && jobCode <= 36) className = "Chanter";
+                    else if (jobCode >= 37 && jobCode <= 40) className = "Fist";
+                }
+            }
+'@
+          if (-not $s.Contains($old)) { throw "Party member id anchor missing" }
+          $s = $s.Replace($old, $new.TrimEnd())
+          $s = $s.Replace('partyIdentities[id] = new PlayerIdentity(name, "Unknown");', 'partyIdentities[id] = new PlayerIdentity(name, className);')
+          $s = $s.Replace('identities[id] = new PlayerIdentity(name, "Unknown");', 'identities[id] = new PlayerIdentity(name, className);')
+          $s = $s.Replace('|server={sid}|combatMatch=', '|server={sid}|jobCode={jobCode}|class={className}|level={level}|combatMatch=')
+          $s = $s.Replace('-> {name} server={sid}', '-> {name} class={className} job={jobCode} level={level} server={sid}')
+          Set-Content $p $s
+
+          $cap = "src/Capture/LiveCaptureAdapter.cs"
+          $c = Get-Content $cap -Raw
+          $oldEvent = 'd.CurrentHp, d.MaxHp, d.Effect, d.Stacks));'
+          $newEvent = 'd.CurrentHp, d.MaxHp, d.Effect, d.Stacks, d.SourceClass));'
+          if ($c.Contains($oldEvent)) { $c = $c.Replace($oldEvent, $newEvent) }
+          Set-Content $cap $c
+
+          $verify = Get-Content $p -Raw
+          $verifyCap = Get-Content $cap -Raw
+          if ($verify -notmatch 'jobCode=\{jobCode\}' -or $verify -notmatch 'new PlayerIdentity\(name, className\)' -or $verifyCap -notmatch 'd.SourceClass') { throw "Party class decode patch failed" }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
