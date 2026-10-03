@@ -42,7 +42,7 @@ public sealed class CombatEngine
                 players.TryGetValue(e.SourceId, out var p);
                 players[e.SourceId] = (string.IsNullOrWhiteSpace(e.Source) ? $"Actor {e.SourceId}" : e.Source,
                     string.IsNullOrWhiteSpace(e.SourceClass) ? (p.ClassName ?? "Unknown") : e.SourceClass,
-                    p.Damage + e.Amount, p.Hits + 1, p.Crits + (e.DamageType == DamageType.Crit ? 1 : 0));
+                    p.Damage + e.Amount, p.Hits + 1, p.Crits + ((e.DamageFlags & DamageFlags.Critical) != 0 || e.DamageType == DamageType.Crit ? 1 : 0));
 
                 skills.TryGetValue(e.Skill, out var s);
                 skills[e.Skill] = (s.Damage + e.Amount, s.Hits + 1);
