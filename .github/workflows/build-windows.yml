@@ -6,6 +6,7 @@ on:
     branches: [ "main" ]
     paths:
       - "src/**"
+      - "Aion2DPSPro-FirstLiveParser-v5.zip"
       - ".github/workflows/build-windows.yml"
 
 jobs:
@@ -16,6 +17,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Expand source archive when needed
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "src/Aion2DPSPro.csproj")) {
+            if (-not (Test-Path "Aion2DPSPro-FirstLiveParser-v5.zip")) { throw "Source project or v5 source ZIP not found." }
+            Expand-Archive -Path "Aion2DPSPro-FirstLiveParser-v5.zip" -DestinationPath "." -Force
+          }
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
