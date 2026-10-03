@@ -578,6 +578,41 @@ jobs:
           }
           Set-Content $xamlPath $xaml
 
+      - name: Add bounded protocol validation recorder
+        shell: pwsh
+        run: |
+          $dispatcherPath = "src/Protocol/PacketDispatcher.cs"
+          $dispatcher = Get-Content $dispatcherPath -Raw
+          if ($dispatcher -notmatch 'ValidationRecord') {
+            $dispatcher = $dispatcher.Replace('public event Action<DecoderDiagnostic>? Diagnostic;', 'public event Action<DecoderDiagnostic>? Diagnostic;' + [Environment]::NewLine + '    public event Action<string>? ValidationRecord;')
+            $dispatcher = $dispatcher.Replace('if (evt is not null) { Diagnostic?.Invoke(new(utc,"parse",$"Parsed {kind}",frame.Length)); yield return evt; }', 'if (evt is not null) { Diagnostic?.Invoke(new(utc,"parse",$"Parsed {kind}",frame.Length)); ValidationRecord?.Invoke($"{utc:O}|tag={kind}|src={evt.SourceId}|tgt={evt.TargetId}|skill={evt.Skill}|amount={evt.Amount}|type={evt.DamageType}|raw={Convert.ToHexString(frame)}"); yield return evt; }')
+          }
+          Set-Content $dispatcherPath $dispatcher
+
+          $decoderPath = "src/Protocol/CurrentClientDecoder.cs"
+          $decoder = Get-Content $decoderPath -Raw
+          if ($decoder -notmatch 'ValidationRecord') {
+            $decoder = $decoder.Replace('public event Action<DecoderDiagnostic>? Diagnostic;', 'public event Action<DecoderDiagnostic>? Diagnostic;' + [Environment]::NewLine + '    public event Action<string>? ValidationRecord;')
+            $decoder = $decoder.Replace('dispatcher.Diagnostic += d => Diagnostic?.Invoke(d);', 'dispatcher.Diagnostic += d => Diagnostic?.Invoke(d);' + [Environment]::NewLine + '        dispatcher.ValidationRecord += s => ValidationRecord?.Invoke(s);')
+          }
+          Set-Content $decoderPath $decoder
+
+          $mainPath = "src/MainWindow.xaml.cs"
+          $main = Get-Content $mainPath -Raw
+          if ($main -notmatch 'validationPath') {
+            $main = $main.Replace('var decoder = new CurrentClientDecoder(profile);', 'var decoder = new CurrentClientDecoder(profile);' + [Environment]::NewLine + '                  var validationDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aion2DPSPro", "Validation");' + [Environment]::NewLine + '                  System.IO.Directory.CreateDirectory(validationDir);' + [Environment]::NewLine + '                  var validationPath = System.IO.Path.Combine(validationDir, $"combat-{DateTime.Now:yyyyMMdd-HHmmss}.log");' + [Environment]::NewLine + '                  int validationLines = 0;' + [Environment]::NewLine + '                  decoder.ValidationRecord += s => { if (validationLines >= 500) return; System.IO.File.AppendAllText(validationPath, s + Environment.NewLine); validationLines++; Dispatcher.Invoke(() => ValidationFile.Text = validationPath); };')
+          }
+          Set-Content $mainPath $main
+
+          $xamlPath = "src/MainWindow.xaml"
+          $xaml = Get-Content $xamlPath -Raw
+          if ($xaml -notmatch 'x:Name="ValidationFile"') {
+            $anchor = '<TextBlock x:Name="SnapshotState" Text="Snapshot #0 | FightDamage=0 | FightDPS=0" TextWrapping="Wrap" Foreground="#9AA8C2" Margin="0,6,0,6"/>'
+            $insert = $anchor + '<TextBlock Text="VALIDATION LOG" Foreground="#9AA8C2" Margin="0,4,0,2"/><TextBlock x:Name="ValidationFile" Text="Waiting for first recognized event..." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10"/>'
+            $xaml = $xaml.Replace($anchor, $insert)
+          }
+          Set-Content $xamlPath $xaml
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
