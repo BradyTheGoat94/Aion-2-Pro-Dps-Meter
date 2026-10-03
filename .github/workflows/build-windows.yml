@@ -958,6 +958,51 @@ jobs:
             throw "Identity cache patch verification failed"
           }
 
+      - name: Add identity entity-ID correlation tracer
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          if ($s -notmatch 'DescribeIdentityCandidates') {
+            $helperLines = @(
+              '    private static string DescribeIdentityCandidates(ReadOnlySpan<byte> d, int start)',
+              '    {',
+              '        var parts = new List<string>();',
+              '        int end = Math.Min(d.Length, start + 96);',
+              '        for (int i = Math.Max(0, start); i < end; i++)',
+              '        {',
+              '            int q = i;',
+              '            if (!ReadV(d, ref q, out var v)) continue;',
+              '            if (v >= 1000 && v <= 500000)',
+              '                parts.Add($"{i}:{v}");',
+              '            if (parts.Count >= 24) break;',
+              '        }',
+              '        return string.Join(",", parts);',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          # Add candidate dump to successful and unsuccessful identity observations.
+          $oldSuccess = 'Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best}",d.Length));'
+          $newSuccess = 'var idCandidates = DescribeIdentityCandidates(d, start);' + [Environment]::NewLine + '        Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best} idCandidates={idCandidates}",d.Length));'
+          if ($s.Contains($oldSuccess)) { $s = $s.Replace($oldSuccess, $newSuccess) }
+
+          $oldFail = 'Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name",d.Length)); return null;'
+          $newFail = 'Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={DescribeIdentityCandidates(d, start)}",d.Length)); return null;'
+          if ($s.Contains($oldFail)) { $s = $s.Replace($oldFail, $newFail) }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'DescribeIdentityCandidates' -or $verify -notmatch 'idCandidates=') {
+            throw "Identity correlation tracer verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
