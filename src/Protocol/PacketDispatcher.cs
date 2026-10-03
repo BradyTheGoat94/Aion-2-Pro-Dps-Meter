@@ -13,6 +13,7 @@ public sealed class PacketDispatcher
     private readonly HashSet<long> recentCombatEntityIds = new();
     private readonly Dictionary<long, MobIdentity> mobs = new();
     private readonly Dictionary<long, long> summonOwners = new();
+    private readonly HashSet<long> confirmedSummons = new();
     public event Action<DecoderDiagnostic>? Diagnostic;
     public event Action<string>? ValidationRecord;
     public PacketDispatcher(ProtocolProfile profile) => this.profile = profile;
@@ -36,6 +37,15 @@ public sealed class PacketDispatcher
         {
             var hpEvt = TryRemainHp(frame, p + 2, utc);
             if (hpEvt is not null) yield return hpEvt;
+            yield break;
+        }
+
+        // Authoritative summon -> owner relation used by current Global builds.
+        // Layout: 04 8D <summon varint> <fixed4> <owner varint> <meta varint> <nameLen> <UTF-8 owner name>.
+        if (a == 0x04 && b == 0x8D)
+        {
+            var ownerEvt = TrySummonOwnership(frame, p + 2, utc);
+            if (ownerEvt is not null) yield return ownerEvt;
             yield break;
         }
 
@@ -157,31 +167,67 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
 
     private void TryRegisterSummonOwner(ReadOnlySpan<byte> d, int p, DateTime utc)
     {
-        int start = p;
-        if (!ReadV(d, ref p, out var summonU) || summonU == 0 || summonU > long.MaxValue) return;
+        int q = p;
+        if (!ReadV(d, ref q, out var summonU) || summonU == 0 || summonU > long.MaxValue) return;
         long summonId = (long)summonU;
+        if (q >= d.Length) return;
 
-        // Global 41 36 summon records contain an FF*8 boundary followed by an
-        // owner header (07 02 06 or 07 02 01). RATmeter independently uses this
-        // structure. Require the candidate owner to be a known/recent combat
-        // entity so ordinary NPC spawns cannot be accidentally merged.
-        ReadOnlySpan<byte> boundary = stackalloc byte[] { 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF };
-        int relBoundary = d.Slice(start).IndexOf(boundary);
-        if (relBoundary < 0) return;
-        int after = start + relBoundary + 8;
-        int limit = Math.Min(d.Length - 5, after + 160);
-        for (int i = after; i <= limit; i++)
+        // Current 41 36 spawn mask: low byte is entity kind. 0x5F is a summon/pet.
+        // Do not treat ordinary NPCs or transient skill-effect entities as summons.
+        byte kind = d[q];
+        if (kind != 0x5F) return;
+        confirmedSummons.Add(summonId);
+        ValidationRecord?.Invoke($"{utc:O}|tag=summonSpawn|summon={summonId}|kind=0x{kind:X2}");
+
+        // The spawn may carry the owner's character name. Use it only when that
+        // name is already independently bound to a different player entity.
+        if (TryReadMobSpawnName(d, p, out var ownerName))
         {
-            bool header = d[i] == 0x07 && d[i+1] == 0x02 && (d[i+2] == 0x06 || d[i+2] == 0x01);
-            if (!header) continue;
-            long ownerId = d[i+3] | ((long)d[i+4] << 8);
-            if (ownerId <= 1 || ownerId == summonId) continue;
-            if (!recentCombatEntityIds.Contains(ownerId) && !identities.ContainsKey(ownerId) && !partyIdentities.ContainsKey(ownerId))
-                continue;
-            summonOwners[summonId] = ownerId;
-            ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={ownerId}|source=4136-boundary");
-            return;
+            var owner = identities.FirstOrDefault(x => x.Key != summonId &&
+                string.Equals(x.Value.Name, ownerName, StringComparison.OrdinalIgnoreCase));
+            if (owner.Key > 0)
+            {
+                summonOwners[summonId] = owner.Key;
+                ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={owner.Key}|source=4136-owner-name|name={ownerName}");
+            }
         }
+    }
+
+    private Aion2Decoded? TrySummonOwnership(ReadOnlySpan<byte> d, int p, DateTime utc)
+    {
+        if (!ReadV(d, ref p, out var summonU) || summonU < 100 || summonU > long.MaxValue) return null;
+        long summonId = (long)summonU;
+        if (p + 4 > d.Length) return null;
+        p += 4;
+        if (!ReadV(d, ref p, out var ownerU) || ownerU < 100 || ownerU > long.MaxValue) return null;
+        long ownerId = (long)ownerU;
+        if (ownerId == summonId || !confirmedSummons.Contains(summonId)) return null;
+
+        string ownerName = "";
+        int namePos = p;
+        if (ReadV(d, ref namePos, out _) && namePos < d.Length)
+        {
+            int len = d[namePos++];
+            if (len >= 1 && len <= 48 && namePos + len <= d.Length)
+            {
+                try
+                {
+                    var candidate = System.Text.Encoding.UTF8.GetString(d.Slice(namePos, len));
+                    if (candidate.Length > 0 && candidate.All(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
+                        ownerName = candidate;
+                }
+                catch { }
+            }
+        }
+
+        summonOwners[summonId] = ownerId;
+        if (!string.IsNullOrWhiteSpace(ownerName))
+            identities[ownerId] = new PlayerIdentity(ownerName, identities.TryGetValue(ownerId, out var old) ? old.ClassName : "Unknown");
+
+        ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={ownerId}|source=048D|name={ownerName}|raw={Convert.ToHexString(d)}");
+        return !string.IsNullOrWhiteSpace(ownerName)
+            ? new(CombatKind.PlayerName, ownerId, ownerName, 0, "", "", 0, DamageType.Unknown, 0, 0, "", 0)
+            : null;
     }
 
     private string ResolveTargetName(long id)
@@ -446,6 +492,13 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             if (ReadV(d, ref q, out var rawEntity) && rawEntity > 0 && rawEntity <= long.MaxValue &&
                 TryReadMobSpawnName(d, start, out var spawnName))
             {
+                // In a 0x5F summon spawn this string is the OWNER name, not the
+                // summon entity's player identity. Ownership is handled separately.
+                if (q < d.Length && d[q] == 0x5F)
+                {
+                    ValidationRecord?.Invoke($"{utc:O}|tag=summonOwnerName|summon={(long)rawEntity}|name={spawnName}");
+                    return null;
+                }
                 long entity = (long)rawEntity;
                 long combatEntity = entity;
                 for (int i = Math.Max(start, 0); i + 3 < d.Length; i++)
