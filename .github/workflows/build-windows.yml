@@ -1807,6 +1807,101 @@ jobs:
           $v = Get-Content $p -Raw
           if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
+      - name: Parse global-to-session identity links
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # AION 2 uses a dedicated 20 36 packet to link the short combat/session
+          # actor ID to the global player ID carried by identity packets.
+          if ($s -notmatch 'globalPlayerNames') {
+            $fieldAnchor = 'private readonly Dictionary<long, PlayerIdentity> identities = new();'
+            if (-not $s.Contains($fieldAnchor)) { throw "Identity dictionary anchor missing" }
+            $fields = $fieldAnchor + [Environment]::NewLine +
+              '    private readonly Dictionary<long, string> globalPlayerNames = new();' + [Environment]::NewLine +
+              '    private readonly Dictionary<long, long> sessionToGlobal = new();'
+            $s = $s.Replace($fieldAnchor, $fields)
+          }
+
+          # Keep every validated identity under its global/entity ID.
+          $identityAnchor = 'identities[id] = new PlayerIdentity(best, "Unknown");'
+          if ($s.Contains($identityAnchor) -and $s -notmatch 'globalPlayerNames\[id\] = best') {
+            $s = $s.Replace($identityAnchor, $identityAnchor + [Environment]::NewLine + '        globalPlayerNames[id] = best;')
+          }
+
+          if ($s -notmatch 'TryGlobalSessionLink') {
+            $helper = @(
+              '    private Aion2Decoded? TryGlobalSessionLink(ReadOnlySpan<byte> d, int tagOffset, DateTime utc)',
+              '    {',
+              '        int p = tagOffset + 2;',
+              '        if (p + 2 > d.Length) return null;',
+              '        p += 2;',
+              '        if (!ReadV(d, ref p, out var rawSession) || rawSession == 0 || rawSession > long.MaxValue) return null;',
+              '        if (p + 8 > d.Length) return null;',
+              '        p += 4;',
+              '        uint global = (uint)(d[p] | (d[p+1] << 8) | (d[p+2] << 16) | (d[p+3] << 24));',
+              '        if (global == 0) return null;',
+              '        long session = (long)rawSession;',
+              '        long globalId = global;',
+              '        sessionToGlobal[session] = globalId;',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionLink|session={session}|global={globalId}|offset={tagOffset}|raw={Convert.ToHexString(d)}");',
+              '        if (!globalPlayerNames.TryGetValue(globalId, out var name) || string.IsNullOrWhiteSpace(name)) return null;',
+              '        identities[session] = new PlayerIdentity(name, "Unknown");',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={name}");',
+              '        return new(CombatKind.PlayerName,session,name,0,"","",0,DamageType.Unknown,0,0,"",0);',
+              '    }',
+              '',
+              '    private Aion2Decoded? TryEmbeddedGlobalSessionLink(ReadOnlySpan<byte> d, DateTime utc)',
+              '    {',
+              '        for (int i = 0; i + 2 < d.Length; i++)',
+              '            if (d[i] == 0x20 && d[i + 1] == 0x36)',
+              '                return TryGlobalSessionLink(d, i, utc);',
+              '        return null;',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for global/session link" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+
+          # Run the dedicated link scan on every decoded frame, like UserInfo.
+          if ($s -notmatch 'embeddedLink = TryEmbeddedGlobalSessionLink') {
+            $dispatchAnchor = '        var embeddedIdentity = TryEmbeddedIdentity(frame, utc);'
+            if (-not $s.Contains($dispatchAnchor)) { throw "Embedded identity dispatch anchor missing" }
+            $scan = @(
+              '        var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);',
+              '        if (embeddedLink is not null)',
+              '            yield return embeddedLink;',
+              '',
+              '        var embeddedIdentity = TryEmbeddedIdentity(frame, utc);'
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($dispatchAnchor, $scan)
+          }
+
+          # If identity arrives after its link packet, promote all linked session IDs.
+          $mapAnchor = 'globalPlayerNames[id] = best;'
+          if ($s.Contains($mapAnchor) -and $s -notmatch 'lateGlobalSessionName') {
+            $late = @(
+              $mapAnchor,
+              '        foreach (var link in sessionToGlobal.Where(x => x.Value == id).ToArray())',
+              '        {',
+              '            identities[link.Key] = new PlayerIdentity(best, "Unknown");',
+              '            ValidationRecord?.Invoke($"{utc:O}|tag=lateGlobalSessionName|session={link.Key}|global={id}|name={best}");',
+              '        }'
+            ) -join [Environment]::NewLine
+            $s = $s.Replace($mapAnchor, $late)
+          }
+
+          Set-Content $p $s
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'TryGlobalSessionLink' -or
+              $v -notmatch 'globalSessionLink' -or
+              $v -notmatch 'sessionToGlobal') {
+            throw "Global/session identity link patch failed"
+          }
+
       - name: Scan embedded UserInfo identity tags
         shell: pwsh
         run: |
