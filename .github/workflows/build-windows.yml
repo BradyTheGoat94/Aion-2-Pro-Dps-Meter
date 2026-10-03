@@ -1807,6 +1807,64 @@ jobs:
           $v = Get-Content $p -Raw
           if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
+      - name: Upgrade named players from Unknown to validated combat class
+        shell: pwsh
+        run: |
+          $p = "src/MainWindow.xaml.cs"
+          $s = Get-Content $p -Raw
+          if ($s -notmatch 'liveEntityClasses') {
+            $field = 'readonly Dictionary<long, string> liveEntityNames = new();'
+            if (-not $s.Contains($field)) { throw "Live entity name cache anchor missing" }
+            $s = $s.Replace($field, $field + [Environment]::NewLine +
+              '              readonly Dictionary<long, string> liveEntityClasses = new();')
+          }
+          if ($s -notmatch 'validatedSourceClass') {
+            $apply = 'engine.Apply(e);'
+            $block = @(
+              '                      if ((e.Kind == CombatKind.Damage || e.Kind == CombatKind.Heal) && e.SourceId > 0)',
+              '                      {',
+              '                          if (!string.IsNullOrWhiteSpace(e.SourceClass) && e.SourceClass != "Unknown")',
+              '                              liveEntityClasses[e.SourceId] = e.SourceClass;',
+              '                          else if (liveEntityClasses.TryGetValue(e.SourceId, out var validatedSourceClass))',
+              '                              e = e with { SourceClass = validatedSourceClass };',
+              '                      }',
+              '                      engine.Apply(e);'
+            ) -join [Environment]::NewLine
+            if (-not $s.Contains($apply)) { throw "Combat engine apply anchor missing" }
+            $s = $s.Replace($apply, $block)
+          }
+          Set-Content $p $s
+
+          $enginePath = "src/CombatEngine.cs"
+          if (-not (Test-Path $enginePath)) {
+            $candidate = Get-ChildItem src -Recurse -Filter 'CombatEngine.cs' | Select-Object -First 1
+            if ($null -eq $candidate) { throw "CombatEngine.cs not found" }
+            $enginePath = $candidate.FullName
+          }
+          $e = Get-Content $enginePath -Raw
+
+          # PlayerStats.Class is initialized from the first event. A PlayerName event
+          # can arrive first with Unknown, so permit later validated combat to upgrade it.
+          if ($e -notmatch 'validated-class-upgrade') {
+            $needle = 'p.Damage += e.Amount;'
+            if ($e.Contains($needle)) {
+              $upgrade = $needle + [Environment]::NewLine +
+                '                // validated-class-upgrade' + [Environment]::NewLine +
+                '                if ((string.IsNullOrWhiteSpace(p.Class) || p.Class == "Unknown") && !string.IsNullOrWhiteSpace(e.SourceClass) && e.SourceClass != "Unknown") p.Class = e.SourceClass;'
+              $e = $e.Replace($needle, $upgrade)
+            } else {
+              $needle = 'p.Damage += e.Amount'
+              if (-not $e.Contains($needle)) { throw "Player damage aggregation anchor missing" }
+              $upgrade = $needle + [Environment]::NewLine +
+                '                // validated-class-upgrade' + [Environment]::NewLine +
+                '                if ((string.IsNullOrWhiteSpace(p.Class) || p.Class == "Unknown") && !string.IsNullOrWhiteSpace(e.SourceClass) && e.SourceClass != "Unknown") p.Class = e.SourceClass;'
+              $e = $e.Replace($needle, $upgrade)
+            }
+          }
+          Set-Content $enginePath $e
+          $verify = Get-Content $enginePath -Raw
+          if ($verify -notmatch 'validated-class-upgrade') { throw "Player class upgrade patch failed" }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
