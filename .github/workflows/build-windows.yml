@@ -13,18 +13,23 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Expand source archive when needed
         shell: pwsh
         run: |
-          if (-not (Test-Path "src/Aion2DPSPro.csproj")) {
+          if (Test-Path "src/Aion2DPSPro.csproj") {
+            "SOURCE_FROM_ARCHIVE=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          else {
+            "SOURCE_FROM_ARCHIVE=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             if (-not (Test-Path "Aion2DPSPro-FirstLiveParser-v5.zip")) { throw "Source project or v5 source ZIP not found." }
             Expand-Archive -Path "Aion2DPSPro-FirstLiveParser-v5.zip" -DestinationPath "." -Force
           }
       - name: Apply build fixes
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $ioFiles = @(
@@ -65,6 +70,7 @@ jobs:
           $text = $text.Replace('return new(CombatKind.TargetHp,0,"",entity,$"Target {entity}","",0,DamageType.Unknown', 'return new(CombatKind.TargetHp,0,"",checked((long)entity),$"Target {entity}","",0,DamageType.Unknown')
           Set-Content $dispatcher $text
       - name: Disable preview data and add live diagnostics
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $main = @'
@@ -244,6 +250,7 @@ jobs:
           Set-Content "src/MainWindow.xaml" $xaml
 
       - name: Apply capture integrity diagnostics
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $capture = @'
@@ -360,6 +367,7 @@ jobs:
           Set-Content $xamlPath $xaml
 
       - name: Fix bidirectional conversation capture and event counters
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $capturePath = "src/Capture/LiveCaptureAdapter.cs"
@@ -378,6 +386,7 @@ jobs:
           Set-Content $mainPath $main
 
       - name: Repair bidirectional capture implementation
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $capture = @'
@@ -502,6 +511,7 @@ jobs:
           Set-Content $mainPath $main
 
       - name: Add decoded event inspector
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $mainPath = "src/MainWindow.xaml.cs"
@@ -530,6 +540,7 @@ jobs:
           Set-Content $xamlPath $xaml
 
       - name: Add guaranteed last decoded event readout
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $mainPath = "src/MainWindow.xaml.cs"
@@ -549,6 +560,7 @@ jobs:
           Set-Content $xamlPath $xaml
 
       - name: Add synchronized snapshot diagnostics
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $mainPath = "src/MainWindow.xaml.cs"
@@ -579,6 +591,7 @@ jobs:
           Set-Content $xamlPath $xaml
 
       - name: Add bounded protocol validation recorder
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $dispatcherPath = "src/Protocol/PacketDispatcher.cs"
@@ -614,6 +627,7 @@ jobs:
           Set-Content $xamlPath $xaml
 
       - name: Correct damage skill-field alignment
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -685,6 +699,7 @@ jobs:
           }
 
       - name: Add post-skill damage candidate tracing
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -743,6 +758,7 @@ jobs:
           }
 
       - name: Correct damage amount field
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -766,6 +782,7 @@ jobs:
           }
 
       - name: Add conservative alternate damage layout fallback
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -823,6 +840,7 @@ jobs:
           }
 
       - name: Relax alternate damage fallback to structural detection
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -861,6 +879,7 @@ jobs:
           }
 
       - name: Correct crit classification and trace raw flags
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -894,6 +913,7 @@ jobs:
           }
 
       - name: Add conservative player identity cache
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -967,6 +987,7 @@ jobs:
           }
 
       - name: Add identity entity-ID correlation tracer
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1012,6 +1033,7 @@ jobs:
           }
 
       - name: Record identity correlation diagnostics
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1034,6 +1056,7 @@ jobs:
           }
 
       - name: Trace entity lifecycle identity bridge
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1116,6 +1139,7 @@ jobs:
           }
 
       - name: Promote structured mob-spawn names to combat identities
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1194,6 +1218,7 @@ jobs:
           }
 
       - name: Bridge named spawn packets to observed combat IDs
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1250,6 +1275,7 @@ jobs:
           }
 
       - name: Parse structured identity character names
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1321,6 +1347,7 @@ jobs:
           }
 
       - name: Promote verified identity IDs to combat names
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1354,6 +1381,7 @@ jobs:
           }
 
       - name: Retroactively rename combat entities
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/MainWindow.xaml.cs"
@@ -1415,6 +1443,7 @@ jobs:
           }
 
       - name: Trace combat-to-identity ID bridge encodings
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1506,6 +1535,7 @@ jobs:
           }
 
       - name: Parse character lookup entity identity
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1573,6 +1603,7 @@ jobs:
           }
 
       - name: Apply validated names to combat events and decode self identity
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $mainPath = "src/MainWindow.xaml.cs"
@@ -1663,6 +1694,7 @@ jobs:
           }
 
       - name: Decode party roster identities for combat actors
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1743,6 +1775,7 @@ jobs:
           }
 
       - name: Decode party job class
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1797,6 +1830,7 @@ jobs:
           if ($verify -notmatch 'jobCode=\{jobCode\}' -or $verify -notmatch 'new PlayerIdentity\(name, className\)' -or $verifyCap -notmatch 'd.SourceClass' -or $verifyDecoded -notmatch 'SourceClass') { throw "Party class decode patch failed" }
 
       - name: Infer class from validated AION 2 skill family
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1821,6 +1855,7 @@ jobs:
           if ($v -notmatch 'ClassFromSkill\(skill\)' -or $v -notmatch '14 => "Ranger"' -or $v -notmatch '16 => "Spiritmaster"') { throw "Skill-family class inference patch failed" }
 
       - name: Scan embedded UserInfo identity tags
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -1875,6 +1910,7 @@ jobs:
           }
 
       - name: Parse global-to-session identity links
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -2006,6 +2042,7 @@ jobs:
           }
 
       - name: Add identity lifecycle census
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -2042,6 +2079,7 @@ jobs:
           }
 
       - name: Add public AION 2 game data catalog
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $catalog = @(
@@ -2179,6 +2217,7 @@ jobs:
           }
 
       - name: Add complete English skill localization database
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PublicGameData.cs"
@@ -2233,6 +2272,7 @@ jobs:
           }
 
       - name: Wire public skill names into decoded combat events
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/Protocol/PacketDispatcher.cs"
@@ -2255,6 +2295,7 @@ jobs:
           }
 
       - name: Show bundled class icons in overlay
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $converter = @(
@@ -2314,6 +2355,7 @@ jobs:
           }
 
       - name: Preserve validated class per combat actor
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
         shell: pwsh
         run: |
           $p = "src/MainWindow.xaml.cs"
@@ -2343,6 +2385,21 @@ jobs:
           $v = Get-Content $p -Raw
           if ($v -notmatch 'liveEntityClasses' -or $v -notmatch 'validatedSourceClass') {
             throw "Validated class cache patch failed"
+          }
+
+      - name: Commit migrated source tree
+        if: env.SOURCE_FROM_ARCHIVE == 'true'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          if (git diff --cached --quiet) {
+            Write-Host "No generated source changes to commit."
+          }
+          else {
+            git commit -m "Commit generated Aion2DPSPro source tree"
+            git push
           }
 
       - name: Setup .NET 8
