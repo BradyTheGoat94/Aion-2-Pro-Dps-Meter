@@ -103,9 +103,15 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (!ReadV(d, ref p, out var damageType)) return null;
 
         int[] trailing={0,0,0,0,8,12,10,14};
-        byte flagByte=0; int adjust=0;
-        if (p+1<d.Length && (p+2>=d.Length || d[p+1]==0)) { flagByte=d[p]; p+=2; adjust=1; }
-        int trailer=trailing[category]-adjust*2; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
+        byte mods=0, direction=0; int consumedSpecial=0;
+        if (category >= 5 && p + 2 < d.Length && d[p + 1] == 0)
+        {
+            mods = d[p];
+            direction = d[p + 2];
+            p += 3;
+            consumedSpecial = 3;
+        }
+        int trailer=trailing[category]-consumedSpecial; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;
@@ -118,8 +124,9 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
 
         RememberCombatEntity(actor);
         RememberCombatEntity(target);
-        var dtype = DecodeType((byte)damageType, flagByte);
-        Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} flagByte=0x{flagByte:X2} decoded={dtype}",d.Length));
+        var dtype = DecodeType((byte)damageType, mods, direction);
+        Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} mods=0x{mods:X2} direction=0x{direction:X2} decoded={dtype}",d.Length));
+        ValidationRecord?.Invoke($"{utc:O}|tag=damageFlags|actor={actor}|target={target}|skill={SkillName(checked((int)skill))}|rawType={damageType}|mods=0x{mods:X2}|direction=0x{direction:X2}|decoded={dtype}|crit={damageType==3}|parry={(mods&0x02)!=0}|perfect={(mods&0x04)!=0}|double={(mods&0x08)!=0}|back={direction==1}|front={direction==2}");
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
         long originalActorId = actorId;
@@ -867,10 +874,13 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
     private static bool ReadV(ReadOnlySpan<byte> d, ref int p, out ulong value) {
         value=0; int shift=0; for(int n=0;n<10 && p<d.Length;n++) { byte b=d[p++]; value|=(ulong)(b&0x7F)<<shift; if((b&0x80)==0)return true; shift+=7; } value=0; return false;
     }
-    private static DamageType DecodeType(byte t, byte flags) {
-        if ((flags & 0x02)!=0) return DamageType.Back;
-        if ((flags & 0x01)!=0) return DamageType.Frontal;
+    private static DamageType DecodeType(byte t, byte mods, byte direction) {
         if (t == 3) return DamageType.Crit;
+        if ((mods & 0x04)!=0) return DamageType.Perfect;
+        if ((mods & 0x08)!=0) return DamageType.Double;
+        if ((mods & 0x02)!=0) return DamageType.Parry;
+        if (direction == 0x01) return DamageType.Back;
+        if (direction == 0x02) return DamageType.Frontal;
         return DamageType.Direct;
     }
 }
