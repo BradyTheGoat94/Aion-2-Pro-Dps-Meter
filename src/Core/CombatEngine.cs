@@ -45,7 +45,7 @@ public sealed class CombatEngine
                 bool activity = (e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0 || e.Kind == CombatKind.CombatStart;
                 if (activity)
                 {
-                    if (current.Start == null) current = new Encounter { Start=t };
+                    if (current.Start == null || current.Completed) current = new Encounter { Start=t };
                     current.Last = t;
                     current.Boss |= e.IsBoss;
                     overall.Start ??= t;
@@ -166,7 +166,7 @@ public sealed class CombatEngine
         {
             completed=Expired(clock())?Finish("Inactivity"):null;
             var selected=segment==MeterSegment.Overall?overall:segment==MeterSegment.Previous?history.LastOrDefault()??new Encounter():current;
-            result=Build(selected,category,segment==MeterSegment.Overall);
+            result=Build(selected,category,segment==MeterSegment.Overall,false);
         }
         if(completed!=null) EncounterCompleted?.Invoke(completed);
         return result;
