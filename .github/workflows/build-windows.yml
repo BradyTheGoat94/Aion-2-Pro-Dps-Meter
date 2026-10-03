@@ -1220,7 +1220,20 @@ jobs:
             '                for (int i = Math.Max(start, 0); i + 3 < d.Length; i++)',
             '                {',
             '                    long candidate = d[i] | ((long)d[i+1] << 8) | ((long)d[i+2] << 16) | ((long)d[i+3] << 24);',
-            '                    if (candidate != entity && recentCombatIds.Contains(candidate)) { combatEntity = candidate; break; }',
+            '                    if (candidate != entity && recentCombatIds.Contains(candidate))
+                    {
+                        int marker = i + 4;
+                        if (marker + 3 < d.Length && d[marker] == 54 && d[marker + 1] == 8)
+                        {
+                            int len = d[marker + 2];
+                            if (len >= 3 && len <= 24 && marker + 3 + len <= d.Length &&
+                                System.Text.Encoding.UTF8.GetString(d.Slice(marker + 3, len)) == spawnName)
+                            {
+                                combatEntity = candidate;
+                                break;
+                            }
+                        }
+                    }',
             '                }'
           ) -join [Environment]::NewLine
           if (-not $s.Contains($old)) { throw "Spawn entity anchor missing" }
