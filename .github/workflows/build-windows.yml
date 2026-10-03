@@ -1115,6 +1115,84 @@ jobs:
             throw "Entity bridge tracer verification failed"
           }
 
+      - name: Promote structured mob-spawn names to combat identities
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          if ($s -notmatch 'TryReadMobSpawnName') {
+            $helper = @(
+              '    private static bool TryReadMobSpawnName(ReadOnlySpan<byte> d, int start, out string name)',
+              '    {',
+              '        name = "";',
+              '        int end = Math.Min(d.Length - 3, start + 256);',
+              '        for (int i = Math.Max(0, start); i < end; i++)',
+              '        {',
+              '            if (d[i] != 0x36 || d[i + 1] != 0x08) continue;',
+              '            int len = d[i + 2];',
+              '            if (len < 3 || len > 24 || i + 3 + len > d.Length) continue;',
+              '            var bytes = d.Slice(i + 3, len);',
+              '            bool valid = true;',
+              '            for (int j = 0; j < bytes.Length; j++)',
+              '            {',
+              '                byte b = bytes[j];',
+              '                if (!((b >= (byte)''A'' && b <= (byte)''Z'') || (b >= (byte)''a'' && b <= (byte)''z'') ||',
+              '                      (b >= (byte)''0'' && b <= (byte)''9'') || b == (byte)''_'' || b == (byte)''-''))',
+              '                { valid = false; break; }',
+              '            }',
+              '            if (!valid) continue;',
+              '            name = System.Text.Encoding.UTF8.GetString(bytes);',
+              '            return true;',
+              '        }',
+              '        return false;',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for mob-spawn identity helper" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+
+          $old = @(
+            '        var fields = DescribeBridgeFields(d, p);',
+            '        var strings = DescribeBridgeStrings(d, p);',
+            '        ValidationRecord?.Invoke($"{utc:O}|tag=entityBridge|packet={packetKind}|fields={fields}|strings={strings}|raw={Convert.ToHexString(d)}");',
+            '        Diagnostic?.Invoke(new(utc,"entity-bridge",$"{packetKind} fields={fields}",d.Length));',
+            '        return null;'
+          ) -join [Environment]::NewLine
+
+          $new = @(
+            '        int start = p;',
+            '        var fields = DescribeBridgeFields(d, p);',
+            '        var strings = DescribeBridgeStrings(d, p);',
+            '        if (packetKind == "mobSpawn")',
+            '        {',
+            '            int q = p;',
+            '            if (ReadV(d, ref q, out var rawEntity) && rawEntity > 0 && rawEntity <= long.MaxValue &&',
+            '                TryReadMobSpawnName(d, start, out var spawnName))',
+            '            {',
+            '                long entity = (long)rawEntity;',
+            '                identities[entity] = new PlayerIdentity(spawnName, "Unknown");',
+            '                ValidationRecord?.Invoke($"{utc:O}|tag=spawnIdentity|entity={entity}|name={spawnName}|fields={fields}|strings={strings}|raw={Convert.ToHexString(d)}");',
+            '                Diagnostic?.Invoke(new(utc,"spawn-identity",$"Mapped spawn entity {entity} -> {spawnName}",d.Length));',
+            '                return new(CombatKind.PlayerName,entity,spawnName,0,"","",0,DamageType.Unknown,0,0,"",0);',
+            '            }',
+            '        }',
+            '        ValidationRecord?.Invoke($"{utc:O}|tag=entityBridge|packet={packetKind}|fields={fields}|strings={strings}|raw={Convert.ToHexString(d)}");',
+            '        Diagnostic?.Invoke(new(utc,"entity-bridge",$"{packetKind} fields={fields}",d.Length));',
+            '        return null;'
+          ) -join [Environment]::NewLine
+
+          if (-not $s.Contains($old)) { throw "ObserveEntityBridge body anchor missing" }
+          $s = $s.Replace($old, $new)
+          Set-Content $p $s
+
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'TryReadMobSpawnName' -or $v -notmatch 'tag=spawnIdentity' -or $v -notmatch 'Mapped spawn entity') {
+            throw "Mob-spawn identity promotion patch failed"
+          }
+
       - name: Parse structured identity character names
         shell: pwsh
         run: |
