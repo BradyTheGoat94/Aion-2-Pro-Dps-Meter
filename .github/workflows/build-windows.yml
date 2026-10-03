@@ -1363,6 +1363,73 @@ jobs:
             throw "Combat-to-identity bridge tracer verification failed"
           }
 
+      - name: Parse character lookup entity identity
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Character lookup is structurally different from otherInfo. Decode its
+          # actual entity ID from the fixed block after the name instead of treating
+          # the first payload varint as the player ID.
+          $old = '"charLookup" => ObserveIdentity(frame, p+2, utc, "charLookup"),'
+          $new = '"charLookup" => TryCharacterLookup(frame, p+2, utc),'
+          if ($s.Contains($old)) { $s = $s.Replace($old, $new) }
+
+          if ($s -notmatch 'TryCharacterLookup\(ReadOnlySpan<byte>') {
+            $lines = @(
+              '    private Aion2Decoded? TryCharacterLookup(ReadOnlySpan<byte> d, int p, DateTime utc)',
+              '    {',
+              '        int start = p;',
+              '        // Current lookup layout: padding(2), 0x07, varint name length, UTF-8 name,',
+              '        // job(1), zeros(3), marker(1), local-like flag(1), level(1), zeros(7),',
+              '        // entityId LE32, serverId LE16.',
+              '        if (p + 3 > d.Length) return null;',
+              '        p += 2;',
+              '        if (p >= d.Length || d[p] != 0x07) return null;',
+              '        p++;',
+              '        if (!ReadV(d, ref p, out var nameLenU)) return null;',
+              '        if (nameLenU < 1 || nameLenU > 72 || nameLenU > int.MaxValue) return null;',
+              '        int nameLen = (int)nameLenU;',
+              '        if (p + nameLen > d.Length) return null;',
+              '        string name;',
+              '        try { name = System.Text.Encoding.UTF8.GetString(d.Slice(p, nameLen)); }',
+              '        catch { return null; }',
+              '        if (string.IsNullOrWhiteSpace(name)) return null;',
+              '        p += nameLen;',
+              '        if (p + 20 > d.Length) return null;',
+              '        int jobCode = d[p]; p++;',
+              '        p += 3;',
+              '        p++;',
+              '        p++;',
+              '        int level = d[p]; p++;',
+              '        p += 7;',
+              '        long entityId = (long)((uint)d[p] | ((uint)d[p+1] << 8) | ((uint)d[p+2] << 16) | ((uint)d[p+3] << 24));',
+              '        p += 4;',
+              '        int serverId = d[p] | (d[p+1] << 8);',
+              '        if (entityId <= 0 || entityId > int.MaxValue) return null;',
+              '        identities[entityId] = new PlayerIdentity(name, "Unknown");',
+              '        var combatHit = recentCombatEntityIds.Contains(entityId) ? "YES" : "NO";',
+              '        Diagnostic?.Invoke(new(utc,"char-lookup",$"Mapped lookup entity {entityId} -> {name} job={jobCode} level={level} server={serverId} combatMatch={combatHit}",d.Length));',
+              '        ValidationRecord?.Invoke($"{utc:O}|tag=charLookupIdentity|entity={entityId}|name={name}|job={jobCode}|level={level}|server={serverId}|combatMatch={combatHit}|raw={Convert.ToHexString(d)}");',
+              '        return new(CombatKind.PlayerName, entityId, name, 0, "", "", 0, DamageType.Unknown, 0,0,"",0);',
+              '    }',
+              ''
+            )
+            $helper = $lines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for char lookup parser" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch '"charLookup" => TryCharacterLookup' -or
+              $verify -notmatch 'tag=charLookupIdentity' -or
+              $verify -notmatch 'combatMatch=') {
+            throw "Character lookup identity parser verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
