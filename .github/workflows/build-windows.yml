@@ -2155,8 +2155,14 @@ jobs:
               $x = [regex]::Replace($x, '(xmlns:x="http://schemas\.microsoft\.com/winfx/2006/xaml")', '$1' + [Environment]::NewLine + '        xmlns:icons="clr-namespace:Aion2DPSPro.Overlay"', 1)
             }
             if ($x -notmatch 'ClassIconConverter x:Key="ClassIconConverter"') {
-              $windowOpen = [regex]::Match($x, '<Window[\s\S]*?>').Value
-              if ($windowOpen) {
+              # OverlayWindow already has Window.Resources. Add the converter to
+              # that existing resource dictionary instead of creating a second one.
+              if ($x -match '<Window.Resources>') {
+                $x = $x.Replace('<Window.Resources>', '<Window.Resources>' + [Environment]::NewLine + '    <icons:ClassIconConverter x:Key="ClassIconConverter"/>')
+              }
+              else {
+                $windowOpen = [regex]::Match($x, '<Window[\s\S]*?>').Value
+                if (-not $windowOpen) { throw "Overlay Window opening tag not found" }
                 $res = $windowOpen + [Environment]::NewLine + '  <Window.Resources><icons:ClassIconConverter x:Key="ClassIconConverter"/></Window.Resources>'
                 $x = $x.Replace($windowOpen, $res)
               }
