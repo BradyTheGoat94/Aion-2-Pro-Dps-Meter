@@ -1,11 +1,13 @@
 namespace Aion2DPSPro;
 
 public enum DamageType { Direct, Dot, Crit, Perfect, Back, Frontal, Parry, Double, MultiHit, Unknown }
+[Flags]
+public enum DamageFlags { None=0, Critical=1, Perfect=2, Double=4, Parry=8, Back=16, Frontal=32, MultiHit=64 }
 public enum CombatKind { Damage, Heal, BuffApply, BuffRemove, TargetHp, PlayerName, Zone, Death, Cast }
 
 public sealed record CombatEvent(DateTime Utc, CombatKind Kind, long SourceId = 0, string Source = "", long TargetId = 0,
     string Target = "", string Skill = "", long Amount = 0, DamageType DamageType = DamageType.Unknown,
-    long CurrentHp = 0, long MaxHp = 0, string Effect = "", int Stacks = 0, string SourceClass = "Unknown");
+    long CurrentHp = 0, long MaxHp = 0, string Effect = "", int Stacks = 0, string SourceClass = "Unknown", DamageFlags DamageFlags = DamageFlags.None);
 
 public sealed record PlayerStats(string Name, string ClassName, long Damage, double Dps, double Share, long Hits, double CritPercent);
 public sealed record SkillStats(string Name, long Damage, long Hits, double Dps);
