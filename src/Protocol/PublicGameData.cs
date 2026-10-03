@@ -9,6 +9,7 @@ internal static class PublicGameData
     private static readonly object Sync = new();
     private static Dictionary<int,string>? skills;
     private static Dictionary<int,string>? mobs;
+    private static Dictionary<int,string>? englishMobs;
     private static bool attempted;
     private static readonly string CachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aion2DPSPro", "meter-bootstrap.json");
 
@@ -2096,6 +2097,10 @@ internal static class PublicGameData
     public static string? MobName(int code)
     {
         EnsureLoaded();
+        // Prefer the English NPC catalogue by numeric mob/template code. This prevents
+        // Korean bootstrap names from reaching the overlay at all.
+        if (englishMobs is not null && englishMobs.TryGetValue(code, out var english))
+            return english;
         if (mobs is not null && mobs.TryGetValue(code, out var name))
             return LocalizeEnglish(name);
         return null;
@@ -2132,9 +2137,29 @@ internal static class PublicGameData
                 var mobMap = new Dictionary<int,string>();
                 CollectMobs(doc.RootElement, mobMap, false);
                 mobs = mobMap;
+                englishMobs = LoadEnglishMobCatalog();
             }
             catch { }
         }
+    }
+
+    private static Dictionary<int,string> LoadEnglishMobCatalog()
+    {
+        var map = new Dictionary<int,string>();
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var json = http.GetStringAsync("https://raw.githubusercontent.com/Helveticxa/Aether-Aion2-DPS-meter-Global/main/src-tauri/data/npc_names_en.json").GetAwaiter().GetResult();
+            using var doc = JsonDocument.Parse(json);
+            foreach (var p in doc.RootElement.EnumerateObject())
+                if (int.TryParse(p.Name, out var id) && p.Value.ValueKind == JsonValueKind.String)
+                {
+                    var name = p.Value.GetString();
+                    if (!string.IsNullOrWhiteSpace(name)) map[id] = name;
+                }
+        }
+        catch { }
+        return map;
     }
 
     private static void CollectMobs(JsonElement node, Dictionary<int,string> map, bool insideMobs)
