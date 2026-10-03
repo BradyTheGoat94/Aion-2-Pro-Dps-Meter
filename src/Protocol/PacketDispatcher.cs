@@ -179,18 +179,10 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         confirmedSummons.Add(summonId);
         ValidationRecord?.Invoke($"{utc:O}|tag=summonSpawn|summon={summonId}|kind=0x{kind:X2}");
 
-        // The spawn may carry the owner's character name. Use it only when that
-        // name is already independently bound to a different player entity.
-        if (TryReadMobSpawnName(d, p, out var ownerName))
-        {
-            var owner = identities.FirstOrDefault(x => x.Key != summonId &&
-                string.Equals(x.Value.Name, ownerName, StringComparison.OrdinalIgnoreCase));
-            if (owner.Key > 0)
-            {
-                summonOwners[summonId] = owner.Key;
-                ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={owner.Key}|source=4136-owner-name|name={ownerName}");
-            }
-        }
+        // IMPORTANT: do not infer ownership from 36 08 strings in this spawn.
+        // Live validation showed that "Karma" here is SevenSins' guild/legion name,
+        // not the pet name or owner character name. Ownership must come from a
+        // validated owner-id relation (04 8D / parent_key), never this string.
     }
 
     private Aion2Decoded? TrySummonOwnership(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -496,7 +488,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
                 // summon entity's player identity. Ownership is handled separately.
                 if (q < d.Length && d[q] == 0x5F)
                 {
-                    ValidationRecord?.Invoke($"{utc:O}|tag=summonOwnerName|summon={(long)rawEntity}|name={spawnName}");
+                    ValidationRecord?.Invoke($"{utc:O}|tag=summonSpawnMetadata|summon={(long)rawEntity}|string={spawnName}|note=not-owner-name");
                     return null;
                 }
                 long entity = (long)rawEntity;
