@@ -2009,6 +2009,7 @@ jobs:
         shell: pwsh
         run: |
           $catalog = @(
+            'using System.IO;',
             'using System.Net.Http;',
             'using System.Text.Json;',
             '',
