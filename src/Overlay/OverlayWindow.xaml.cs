@@ -13,18 +13,29 @@ public partial class OverlayWindow : Window
     public Func<string[]>? HistoryProvider {get;set;}
     public Func<string,Task<MeterSnapshot?>>? HistoryLoader {get;set;}
     MeterSnapshot? last;
+    MeterSnapshot? historicalSnapshot;
+    string? historicalPath;
+    bool loadingHistory;
     long? selectedActor;
     string SelectedName(long id)=>last?.Players.FirstOrDefault(p=>p.ActorId==id)?.Name??$"Actor {id}";
     string currentTheme = "Aion Blue/Red";
     string currentStyle = "Classic Dashboard";
     bool clickThrough;
     bool showDetails = true;
-    public OverlayWindow() { InitializeComponent(); CategoryPicker.ItemsSource=new[]{"Damage","Healing","Damage Taken","Deaths","Buffs","Debuffs","Interrupts","Dispels"}; CategoryPicker.SelectedIndex=0; ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); LoadPreferences(); }
+    public OverlayWindow() { InitializeComponent(); CategoryPicker.ItemsSource=new[]{"Damage","Healing","Damage Taken","Deaths","Buffs","Debuffs","Interrupts","Dispels"}; CategoryPicker.SelectedIndex=0; FightHistory.ItemsSource=new[]{new HistoryChoice("Saved fights ▾",null)}; FightHistory.SelectedIndex=0; ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); LoadPreferences(); }
     static readonly Dictionary<string,string> Colors = new(StringComparer.OrdinalIgnoreCase) {
         ["Gladiator"]="#E65353", ["Templar"]="#E8903D", ["Assassin"]="#C45CFF", ["Ranger"]="#F2C94C",
         ["Sorcerer"]="#4DA3FF", ["Spiritmaster"]="#48C9D8", ["Cleric"]="#6DDB72", ["Chanter"]="#D6DCE8", ["Brawler"]="#FF7A45", ["Unknown"]="#AAB6CC" };
     public void Render(MeterSnapshot s) {
-        s=SnapshotProvider?.Invoke((MeterSegment)Math.Clamp(Segment.SelectedIndex,0,2),(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7))??s;
+        var category=(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7);
+        if(historicalSnapshot!=null)
+        {
+            s=HistoricalCategory(historicalSnapshot,category);
+        }
+        else
+        {
+            s=SnapshotProvider?.Invoke((MeterSegment)Math.Clamp(Segment.SelectedIndex,0,2),category)??s;
+        }
         selectedActor=(Rows.SelectedItem as Row)?.Stats.ActorId??selectedActor;
         last=s; PreviewBadge.Visibility=s.PreviewMode?Visibility.Visible:Visibility.Collapsed;
         Timer.Text=TimeSpan.FromSeconds(s.FightSeconds).ToString(@"mm\:ss"); GroupDps.Text=$"GROUP {F(s.Players.Sum(p=>p.Dps))} {s.MetricLabel}";
@@ -38,6 +49,72 @@ public partial class OverlayWindow : Window
         if(Rows.SelectedItem==null){SelectedPlayer.Text="Select a player";SelectedMeta.Text="";}
         UpdateSkills();
     }
+
+    static MeterSnapshot HistoricalCategory(MeterSnapshot saved,MeterCategory category)
+    {
+        if(category==MeterCategory.Damage || !saved.Categories.TryGetValue(category,out var data))
+            return saved with {Category=category};
+        return saved with {Players=data.Players,Skills=data.Skills,Category=category,MetricLabel=data.MetricLabel};
+    }
+
+    async void RefreshFightHistory(object sender,EventArgs e)
+    {
+        if(loadingHistory || HistoryProvider==null || HistoryLoader==null)return;
+        loadingHistory=true;
+        try
+        {
+            var choices=new List<HistoryChoice> {new("Saved fights ▾",null)};
+            foreach(var path in HistoryProvider().Take(50))
+            {
+                try
+                {
+                    var saved=await HistoryLoader(path);
+                    if(saved==null)continue;
+                    var target=string.IsNullOrWhiteSpace(saved.Target?.Name)?"Encounter":saved.Target!.Name;
+                    var when=saved.StartedUtc?.ToLocalTime().ToString("MM/dd HH:mm")??"Unknown time";
+                    var duration=TimeSpan.FromSeconds(saved.FightSeconds).ToString(@"mm\:ss");
+                    choices.Add(new HistoryChoice($"{when} • {target} • {duration}",path));
+                }
+                catch { }
+            }
+            FightHistory.ItemsSource=choices;
+            FightHistory.SelectedIndex=historicalPath==null?0:Math.Max(0,choices.FindIndex(x=>x.Path==historicalPath));
+        }
+        finally {loadingHistory=false;}
+    }
+
+    async void FightHistoryChanged(object sender,System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if(loadingHistory || FightHistory.SelectedItem is not HistoryChoice choice)return;
+        if(choice.Path==null)
+        {
+            historicalSnapshot=null;
+            historicalPath=null;
+            if(last!=null)Render(last);
+            return;
+        }
+        if(HistoryLoader==null)return;
+        try
+        {
+            var saved=await HistoryLoader(choice.Path);
+            if(saved==null)return;
+            historicalSnapshot=saved;
+            historicalPath=choice.Path;
+            selectedActor=null;
+            Render(saved);
+        }
+        catch(Exception ex) {MessageBox.Show(this,ex.Message,"Unable to read fight history");}
+    }
+
+    void SegmentChanged(object sender,System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if(Segment==null)return;
+        historicalSnapshot=null;
+        historicalPath=null;
+        if(FightHistory!=null && FightHistory.SelectedIndex>0)FightHistory.SelectedIndex=0;
+        if(last!=null)Render(last);
+    }
+
     static Brush Brush(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c.StartsWith("#",StringComparison.Ordinal)?c:Colors.TryGetValue(c,out var v)?v:Colors["Unknown"]));
     void UpdateSkills()
     {
@@ -84,8 +161,8 @@ public partial class OverlayWindow : Window
         {
             panel.Children.Add(new System.Windows.Controls.TextBlock {Text="End fight after inactivity (seconds)"});
             var timeout=new System.Windows.Controls.Slider {Minimum=8,Maximum=120,Value=Engine.InactivityTimeout.TotalSeconds,TickFrequency=1,IsSnapToTickEnabled=true,Margin=new Thickness(0,5,0,8)};
-            timeout.ValueChanged += (_,__)=>Engine.InactivityTimeout=TimeSpan.FromSeconds(timeout.Value);panel.Children.Add(timeout);
-            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="Boss inactivity uses 120s only when a verified boss signal is supplied.",TextWrapping=TextWrapping.Wrap,FontSize=11});
+            timeout.ValueChanged += (_,__)=> { var value=TimeSpan.FromSeconds(timeout.Value); Engine.InactivityTimeout=value; Engine.BossInactivityTimeout=value; };panel.Children.Add(timeout);
+            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="Default is 8 seconds. The same inactivity timeout applies to normal and boss fights.",TextWrapping=TextWrapping.Wrap,FontSize=11});
             var finish=new System.Windows.Controls.Button {Content="Finish current fight",Margin=new Thickness(0,8,0,0)};
             finish.Click += (_,__)=>Engine.ResetFight();panel.Children.Add(finish);
         }
@@ -282,8 +359,8 @@ public partial class OverlayWindow : Window
     {
         if(last is null || Rows.SelectedItem is not Row r)return;
         var segment=(MeterSegment)Math.Clamp(Segment.SelectedIndex,0,2);
-        var frozen=Engine?.Snapshot(segment,MeterCategory.Damage,true)??last;
-        Func<MeterSnapshot> provider=()=>Engine is null?frozen:segment==MeterSegment.Overall?Engine.Snapshot(segment,MeterCategory.Damage,true):Engine.SnapshotEncounter(frozen.EncounterId)??frozen;
+        var frozen=historicalSnapshot??Engine?.Snapshot(segment,MeterCategory.Damage,true)??last;
+        Func<MeterSnapshot> provider=()=>historicalSnapshot!=null?frozen:Engine is null?frozen:segment==MeterSegment.Overall?Engine.Snapshot(segment,MeterCategory.Damage,true):Engine.SnapshotEncounter(frozen.EncounterId)??frozen;
         var report=new CombatReportWindow(provider,r.Stats.ActorId,(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7)) {Owner=this};
         report.Show();
     }
@@ -332,6 +409,7 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd,int nIndex);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd,int nIndex,int dwNewLong);
     static string F(double v)=>v>=1_000_000?$"{v/1_000_000:0.00}M":v>=1_000?$"{v/1_000:0.0}K":$"{v:0}";
+    sealed record HistoryChoice(string Label,string? Path);
     sealed record Row(int Rank,string Name,string ClassName,string Dps,string Damage,string Share,Brush Brush,double BarWidth,double Relative,PlayerStats Stats);
 }
 
