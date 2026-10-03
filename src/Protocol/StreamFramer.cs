@@ -45,7 +45,7 @@ public sealed class StreamFramer
             if (size <= 0 || size > MaxMessageLen) yield break;
             var outBuf = new byte[size];
             int written = Lz4BlockDecoder.Decompress(frame.AsSpan(p + 6), outBuf);
-            if (written <= 0) { Diagnostic?.Invoke(new(utc,"lz4","Decompression failed",frame.Length)); yield break; }
+            if (written != size) { Diagnostic?.Invoke(new(utc,"lz4","Decompression failed",frame.Length)); yield break; }
             int q = 0;
             while (q < written)
             {
@@ -69,4 +69,5 @@ public sealed class StreamFramer
         value=0; return false;
     }
 }
+
 

@@ -20,8 +20,8 @@
    </Border>
    <Grid x:Name="ToolbarGrid" Grid.Row="1" Margin="10,5,10,3">
     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"><TabItem Header="Damage"/><TabItem Header="Healing"/><TabItem Header="Damage Taken"/><TabItem Header="Deaths"/><TabItem Header="Buffs"/><TabItem Header="Debuffs"/><TabItem Header="Interrupts"/><TabItem Header="Dispels"/></TabControl>
-    <ComboBox x:Name="Segment" Grid.Column="1" Width="130" Height="28" SelectedIndex="0" Background="#14284A" Foreground="White"><ComboBoxItem Content="Current Fight"/><ComboBoxItem Content="Overall"/></ComboBox>
+    <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"><TabItem Header="Damage"/><TabItem Header="Healing"/><TabItem Header="Damage Taken"/><TabItem Header="Deaths" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Buffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Debuffs" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Interrupts" ToolTip="Aggregation supported; live opcode unverified"/><TabItem Header="Dispels" ToolTip="Aggregation supported; live opcode unverified"/></TabControl>
+    <ComboBox x:Name="Segment" Grid.Column="1" Width="130" Height="28" SelectedIndex="0" Background="#14284A" Foreground="White"><ComboBoxItem Content="Current Fight"/><ComboBoxItem Content="Previous Fight"/><ComboBoxItem Content="Overall"/></ComboBox>
    </Grid>
    <Grid x:Name="ContentGrid" Grid.Row="2" Margin="12,4,12,6">
     <Grid.ColumnDefinitions><ColumnDefinition Width="1.7*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
@@ -46,4 +46,5 @@
   </Grid>
  </Border>
 </Window>
+
 

@@ -8,7 +8,13 @@ using Aion2DPSPro;
 namespace Aion2DPSPro.Overlay;
 public partial class OverlayWindow : Window
 {
+    public CombatEngine? Engine {get;set;}
+    public Func<MeterSegment,MeterCategory,MeterSnapshot>? SnapshotProvider {get;set;}
+    public Func<string[]>? HistoryProvider {get;set;}
+    public Func<string,Task<MeterSnapshot?>>? HistoryLoader {get;set;}
     MeterSnapshot? last;
+    long? selectedActor;
+    string SelectedName(long id)=>last?.Players.FirstOrDefault(p=>p.ActorId==id)?.Name??$"Actor {id}";
     string currentTheme = "Aion Blue/Red";
     string currentStyle = "Classic Dashboard";
     bool clickThrough;
@@ -18,21 +24,32 @@ public partial class OverlayWindow : Window
         ["Gladiator"]="#E65353", ["Templar"]="#E8903D", ["Assassin"]="#C45CFF", ["Ranger"]="#F2C94C",
         ["Sorcerer"]="#4DA3FF", ["Spiritmaster"]="#48C9D8", ["Cleric"]="#6DDB72", ["Chanter"]="#D6DCE8", ["Brawler"]="#FF7A45", ["Unknown"]="#AAB6CC" };
     public void Render(MeterSnapshot s) {
+        s=SnapshotProvider?.Invoke((MeterSegment)Math.Clamp(Segment.SelectedIndex,0,2),(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7))??s;
+        selectedActor=(Rows.SelectedItem as Row)?.Stats.ActorId??selectedActor;
         last=s; PreviewBadge.Visibility=s.PreviewMode?Visibility.Visible:Visibility.Collapsed;
-        Timer.Text=TimeSpan.FromSeconds(s.FightSeconds).ToString(@"mm\:ss"); GroupDps.Text=$"GROUP {F(s.FightDps)} DPS";
+        Timer.Text=TimeSpan.FromSeconds(s.FightSeconds).ToString(@"mm\:ss"); GroupDps.Text=$"GROUP {F(s.Players.Sum(p=>p.Dps))} {s.MetricLabel}";
         BossHp.Value=s.Target?.Percent??0; TargetName.Text=s.Target?.Name??"No target";
         TargetHp.Text=s.Target is null?"":$"{s.Target.Percent:0.0}%   {F(s.Target.CurrentHp)} / {F(s.Target.MaxHp)}";
-        StatusText.Text=s.PreviewMode?"SIMULATED DATA":"LIVE DATA";
+        StatusText.Text=s.PreviewMode?"SIMULATED DATA":$"{(s.InFight?"CURRENT":"COMPLETED")} • PROTOCOL UNVERIFIED";
         var max=Math.Max(1,s.Players.FirstOrDefault()?.Dps??1);
         Rows.ItemsSource=s.Players.Select((p,i)=>new Row(i+1,p.Name,p.ClassName,F(p.Dps),F(p.Damage),$"{p.Share:0.0}%",Brush(p.ClassName),Math.Max(4,150*p.Dps/max),p)).ToList();
-        Skills.ItemsSource=s.Skills.Take(7).Select(x=>new {x.Name,Damage=F(x.Damage)}).ToList();
+        Rows.SelectedItem=Rows.Items.Cast<Row>().FirstOrDefault(r=>r.Stats.ActorId==selectedActor);
+        UpdateSkills();
     }
-    static Brush Brush(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(Colors.TryGetValue(c,out var v)?v:Colors["Unknown"]));
-    void PlayerSelected(object s,System.Windows.Controls.SelectionChangedEventArgs e){ if(Rows.SelectedItem is Row r){SelectedPlayer.Text=r.Name;SelectedPlayer.Foreground=r.Brush;SelectedMeta.Text=$"{r.ClassName}  •  {r.Stats.Dps:N0} DPS  •  {r.Stats.Damage:N0} damage  •  {r.Stats.CritPercent:0.0}% crit";} }
+    static Brush Brush(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c.StartsWith("#",StringComparison.Ordinal)?c:Colors.TryGetValue(c,out var v)?v:Colors["Unknown"]));
+    void UpdateSkills()
+    {
+        if(last==null)return;
+        Skills.ItemsSource=last.Skills.Where(x=>x.ActorId==selectedActor).Take(7).Select(x=>new {x.Name,Damage=F(x.Damage)}).ToArray();
+    }
+    void PlayerSelected(object s,System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if(Rows.SelectedItem is Row r) {selectedActor=r.Stats.ActorId;SelectedPlayer.Text=r.Name;SelectedPlayer.Foreground=r.Brush;SelectedMeta.Text=$"{r.ClassName} • {r.Stats.Dps:N0} {last?.MetricLabel} • {r.Stats.Damage:N0} total • {r.Stats.CritPercent:0.0}% crit";UpdateSkills();}
+    }
 
     void OpenSettings(object sender, RoutedEventArgs e)
     {
-        var w = new Window { Title="AION 2 DPS — Overlay Settings", Width=410, Height=540,
+        var w = new Window { Title="AION 2 DPS — Overlay Settings", Width=450, Height=700,
             WindowStartupLocation=WindowStartupLocation.CenterOwner, Owner=this, Background=Brush("#0A0E16"), Foreground=Brush("#F4F7FF"), ResizeMode=ResizeMode.NoResize };
         var panel = new System.Windows.Controls.StackPanel { Margin=new Thickness(20) };
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="OVERLAY SETTINGS", FontSize=22, FontWeight=FontWeights.Bold, Margin=new Thickness(0,0,0,16) });
@@ -60,6 +77,43 @@ public partial class OverlayWindow : Window
         top.Checked += (_,__) => Topmost=true; top.Unchecked += (_,__) => Topmost=false; panel.Children.Add(top);
         var pass = new System.Windows.Controls.CheckBox { Content="Mouse click-through", IsChecked=clickThrough, Margin=new Thickness(0,4,0,8) };
         pass.Checked += (_,__) => ApplyClickThrough(true); pass.Unchecked += (_,__) => ApplyClickThrough(false); panel.Children.Add(pass);
+        if(Engine!=null)
+        {
+            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="End fight after inactivity (seconds)"});
+            var timeout=new System.Windows.Controls.Slider {Minimum=8,Maximum=120,Value=Engine.InactivityTimeout.TotalSeconds,TickFrequency=1,IsSnapToTickEnabled=true,Margin=new Thickness(0,5,0,8)};
+            timeout.ValueChanged += (_,__)=>Engine.InactivityTimeout=TimeSpan.FromSeconds(timeout.Value);panel.Children.Add(timeout);
+            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="Boss inactivity uses 120s only when a verified boss signal is supplied.",TextWrapping=TextWrapping.Wrap,FontSize=11});
+            var finish=new System.Windows.Controls.Button {Content="Finish current fight",Margin=new Thickness(0,8,0,0)};
+            finish.Click += (_,__)=>Engine.ResetFight();panel.Children.Add(finish);
+        }
+        var historyButton=new System.Windows.Controls.Button {Content="Saved fight history",Margin=new Thickness(0,8,0,0)};
+        historyButton.Click += async (_,__)=>
+        {
+            try
+            {
+                var list=new System.Windows.Controls.ListBox {ItemsSource=HistoryProvider?.Invoke()??Array.Empty<string>()};
+                var historyWindow=new Window {Title="Saved fights — double-click to open",Width=850,Height=500,Owner=this,Content=list};
+                list.MouseDoubleClick += async (_,__)=>
+                {
+                    if(list.SelectedItem is not string file || HistoryLoader==null)return;
+                    try {var saved=await HistoryLoader(file);if(saved!=null)
+                    {
+                        var savedTabs=new System.Windows.Controls.TabControl();
+                        foreach(var category in saved.Categories)
+                        {
+                            var grid=new System.Windows.Controls.DataGrid {IsReadOnly=true,ItemsSource=category.Value.Players};
+                            savedTabs.Items.Add(new System.Windows.Controls.TabItem {Header=category.Key.ToString(),Content=grid});
+                        }
+                        if(savedTabs.Items.Count==0)savedTabs.Items.Add(new System.Windows.Controls.TabItem {Header="Damage",Content=new System.Windows.Controls.DataGrid {IsReadOnly=true,ItemsSource=saved.Players}});
+                        new Window {Title=$"Fight {saved.StartedUtc} — {saved.EndReason}",Width=850,Height=500,Owner=historyWindow,Content=savedTabs}.Show();
+                    }}
+                    catch(Exception ex) {MessageBox.Show(historyWindow,ex.Message,"Unable to read fight history");}
+                };
+                historyWindow.Show(); await Task.CompletedTask;
+            }
+            catch(Exception ex) {MessageBox.Show(this,ex.Message,"Unable to open fight history");}
+        };
+        panel.Children.Add(historyButton);
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Tip: double-click any player row for a detailed report.", Foreground=Brush("#8FB8FF"), TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,16,0,0) });
         w.Content=panel; w.ShowDialog();
     }
@@ -216,11 +270,14 @@ public partial class OverlayWindow : Window
         skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="Damage", Binding=new System.Windows.Data.Binding("Damage"){StringFormat="N0"}, Width=120 });
         skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="Hits", Binding=new System.Windows.Data.Binding("Hits"), Width=80 });
         skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn { Header="DPS", Binding=new System.Windows.Data.Binding("Dps"){StringFormat="N0"}, Width=100 });
-        skillGrid.ItemsSource=last.Skills; skillsTab.Content=skillGrid; tabs.Items.Add(skillsTab);
+        foreach(var field in new[]{"CritPercent","Share","Average","MinHit","MaxHit"}) skillGrid.Columns.Add(new System.Windows.Controls.DataGridTextColumn {Header=field,Binding=new System.Windows.Data.Binding(field){StringFormat="N1"},Width=100});
+        skillGrid.ItemsSource=last.Skills.Where(x=>x.ActorId==r.Stats.ActorId).ToArray(); skillsTab.Content=skillGrid; tabs.Items.Add(skillsTab);
         var eventsTab = new System.Windows.Controls.TabItem { Header="Recent Events" };
         var events = new System.Windows.Controls.ListBox { Background=Brush("#101827"), Foreground=Brush("#DDE9FF"), FontFamily=new FontFamily("Consolas") };
-        events.ItemsSource=last.RecentEvents.Where(x=>x.Source==r.Name || x.SourceId.ToString()==r.Name.Replace("Actor ","")).Reverse().Select(x=>$"{x.Utc:HH:mm:ss.fff}  {x.Skill,-28} {x.Amount,10:N0}  {x.DamageType}  {x.DamageFlags}");
+        events.ItemsSource=last.RecentEvents.Where(x=>x.SourceId==r.Stats.EntityId || x.TargetId==r.Stats.EntityId).Reverse().Select(x=>$"{x.Utc:HH:mm:ss.fff}  {x.Skill,-28} {x.Amount,10:N0}  {x.DamageType}  {x.DamageFlags}");
         eventsTab.Content=events; tabs.Items.Add(eventsTab);
+        var buffTab=new System.Windows.Controls.TabItem {Header="Buffs / Debuffs"};
+        buffTab.Content=new System.Windows.Controls.DataGrid {IsReadOnly=true,ItemsSource=last.Buffs.Where(x=>x.TargetId==r.Stats.ActorId).ToArray()}; tabs.Items.Add(buffTab);
         root.Children.Add(tabs); w.Content=root; w.Show();
     }
     void CloseOverlay(object s,RoutedEventArgs e)=>Hide();
@@ -231,3 +288,4 @@ public partial class OverlayWindow : Window
     static string F(double v)=>v>=1_000_000?$"{v/1_000_000:0.00}M":v>=1_000?$"{v/1_000:0.0}K":$"{v:0}";
     sealed record Row(int Rank,string Name,string ClassName,string Dps,string Damage,string Share,Brush Brush,double BarWidth,PlayerStats Stats);
 }
+

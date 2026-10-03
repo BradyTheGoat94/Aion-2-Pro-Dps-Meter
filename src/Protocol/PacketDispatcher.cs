@@ -76,7 +76,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             "damage" => TryDamage(frame, p+2, utc),
             "dot" => TryDot(frame, p+2, utc),
             "bossHp" => TryBossHp(frame, p+2, utc),
-            "entityRemoved" => ObserveEntityBridge(frame, p+2, utc, "entityRemoved"),
+            "entityRemoved" => RemoveEntity(frame, p+2),
             "selfInfo" => ObserveSelfIdentity(frame, p+2, utc),
             "otherInfo" => ObserveIdentity(frame, p+2, utc, "otherInfo"),
             "charLookup" => TryCharacterLookup(frame, p+2, utc),
@@ -85,6 +85,17 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (evt is not null) { Diagnostic?.Invoke(new(utc,"parse",$"Parsed {kind}",frame.Length)); var candidates = kind == "damage" ? DescribeVarintCandidates(frame, FindPostSkillPosition(frame, p+2)) : "";
       ValidationRecord?.Invoke($"{utc:O}|tag={kind}|src={evt.SourceId}|tgt={evt.TargetId}|skill={evt.Skill}|amount={evt.Amount}|type={evt.DamageType}|candidates={candidates}|raw={Convert.ToHexString(frame)}"); yield return evt; }
         else Diagnostic?.Invoke(new(utc,"dispatch",$"Matched {kind}; no validated event emitted",frame.Length));
+    }
+
+    private Aion2Decoded? RemoveEntity(ReadOnlySpan<byte> frame,int p)
+    {
+        if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
+        long id=(long)value;
+        identities.Remove(id);globalPlayerNames.Remove(id);partyIdentities.Remove(id);sessionToGlobal.Remove(id);
+        mobs.Remove(id);summonOwners.Remove(id);confirmedSummons.Remove(id);recentCombatIds.Remove(id);recentCombatEntityIds.Remove(id);
+        foreach(var key in sessionToGlobal.Where(x=>x.Value==id).Select(x=>x.Key).ToArray())sessionToGlobal.Remove(key);
+        foreach(var key in summonOwners.Where(x=>x.Value==id).Select(x=>x.Key).ToArray())summonOwners.Remove(key);
+        return new(CombatKind.Despawn,id,"",0,"","",0,DamageType.Unknown,0,0,"",0);
     }
 
     private Aion2Decoded? TryDamage(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -895,6 +906,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         return DamageType.Direct;
     }
 }
+
 
 
 

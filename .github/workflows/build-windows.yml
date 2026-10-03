@@ -3,9 +3,10 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "accuracy-reliability" ]
     paths:
       - "src/**"
+      - "tests/**"
       - "Aion2DPSPro-FirstLiveParser-v5.zip"
       - ".github/workflows/build-windows.yml"
 
@@ -2406,8 +2407,12 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Combat and protocol regression checks
+        run: dotnet run --project tests/Regression.csproj -c Release
       - name: Restore
         run: dotnet restore src/Aion2DPSPro.csproj
+      - name: WPF overlay smoke checks
+        run: dotnet run --project tests/OverlaySmoke/OverlaySmoke.csproj -c Release
       - name: Publish Windows x64
         run: dotnet publish src/Aion2DPSPro.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
       - name: Upload executable
@@ -2416,3 +2421,4 @@ jobs:
           name: Aion2DPSPro-win-x64
           path: publish/
           if-no-files-found: error
+
