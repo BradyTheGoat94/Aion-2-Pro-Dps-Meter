@@ -2132,6 +2132,11 @@ internal static class PublicGameData
             {
                 try { if (File.Exists(CachePath)) json = File.ReadAllText(CachePath); } catch { }
             }
+            // English NPC names are an independent source. Load them even when
+            // meter-bootstrap is temporarily unavailable or changes JSON shape.
+            // Otherwise a bootstrap outage degrades every known NPC to Target <entity>.
+            englishMobs = LoadEnglishMobCatalog();
+
             if (string.IsNullOrWhiteSpace(json)) return;
             try
             {
@@ -2144,7 +2149,6 @@ internal static class PublicGameData
                 var mobMap = new Dictionary<int,string>();
                 CollectMobs(doc.RootElement, mobMap, false);
                 mobs = mobMap;
-                englishMobs = LoadEnglishMobCatalog();
             }
             catch { }
         }

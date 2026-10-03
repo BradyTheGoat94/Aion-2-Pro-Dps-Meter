@@ -187,7 +187,7 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         var actorName = ResolveName(actorId, "Actor");
         var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
             ? knownIdentity.ClassName : ClassFromSkill((int)skill);
-        return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveName(targetId, "Target"),
+        return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveTargetName(targetId),
             SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
     }
 
