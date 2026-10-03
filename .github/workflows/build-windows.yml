@@ -508,18 +508,18 @@ jobs:
           $main = Get-Content $mainPath -Raw
           $main = $main.Replace('string activeFlow = "Waiting...";', 'string activeFlow = "Waiting...";' + [Environment]::NewLine + '              readonly Queue<string> eventInspector = new();')
           $oldApply = 'engine.Apply(e);'
-          $newApply = @'
-                      var before = engine.Snapshot();
-                      engine.Apply(e);
-                      var after = engine.Snapshot();
-                      var accepted = e.Kind != CombatKind.Damage || after.FightDamage > before.FightDamage;
-                      var delta = after.FightDamage - before.FightDamage;
-                      var line = $"{e.Utc:HH:mm:ss.fff} {e.Kind} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} amount={e.Amount} type={e.DamageType} engineDelta={delta} {(accepted ? "ACCEPT" : "NO-DAMAGE-CHANGE")}";
-                      eventInspector.Enqueue(line);
-                      while (eventInspector.Count > 12) eventInspector.Dequeue();
-                      EventInspector.Text = string.Join(Environment.NewLine, eventInspector.Reverse());
-'@
-          $main = $main.Replace($oldApply, $newApply.TrimEnd())
+          $newApply = @(
+            '                      var before = engine.Snapshot();',
+            '                      engine.Apply(e);',
+            '                      var after = engine.Snapshot();',
+            '                      var accepted = e.Kind != CombatKind.Damage || after.FightDamage > before.FightDamage;',
+            '                      var delta = after.FightDamage - before.FightDamage;',
+            '                      var line = $"{e.Utc:HH:mm:ss.fff} {e.Kind} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} amount={e.Amount} type={e.DamageType} engineDelta={delta} {(accepted ? "ACCEPT" : "NO-DAMAGE-CHANGE")}";',
+            '                      eventInspector.Enqueue(line);',
+            '                      while (eventInspector.Count > 12) eventInspector.Dequeue();',
+            '                      EventInspector.Text = string.Join(Environment.NewLine, eventInspector.Reverse());'
+          ) -join [Environment]::NewLine
+          $main = $main.Replace($oldApply, $newApply)
           Set-Content $mainPath $main
 
           $xamlPath = "src/MainWindow.xaml"
