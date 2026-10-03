@@ -442,7 +442,15 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         // Alternate packets observed in validation carry a stable actor/base
         // value near the tail, followed immediately by the real varying hit.
         // Search only the final portion and require a plausible non-tiny hit.
-        int start = Math.Max(0, d.Length - 12);
+        // The charged Punishment packet has a longer tail than ordinary
+        // damage packets. In live Global captures its authoritative pair is
+        // 11350 -> <damage> (for example 11350 -> 21636), while the generic
+        // layout can otherwise land on the later hit-count value (3).
+        //
+        // Keep this structural rather than skill-name-specific: only recover
+        // when a plausible stable/base value is immediately followed by a
+        // plausible hit, but scan enough of the tail to include that pair.
+        int start = Math.Max(0, d.Length - 18);
         for (int i = start; i < d.Length; i++)
         {
             int p = i;
