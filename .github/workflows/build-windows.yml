@@ -1867,6 +1867,40 @@ jobs:
           $p = "src/Protocol/PacketDispatcher.cs"
           $s = Get-Content $p -Raw
 
+          # Diagnostic-only scan for the current client's 20 36 byte pattern.
+          # This records candidate layouts without assigning any player name.
+          if ($s -notmatch 'TraceGlobalSessionCandidates') {
+            $helper = @(
+              '    private void TraceGlobalSessionCandidates(ReadOnlySpan<byte> d, DateTime utc)',
+              '    {',
+              '        for (int i = 0; i + 1 < d.Length; i++)',
+              '        {',
+              '            if (d[i] != 0x20 || d[i + 1] != 0x36) continue;',
+              '            int from = Math.Max(0, i - 8);',
+              '            int count = Math.Min(d.Length - from, 48);',
+              '            var window = d.Slice(from, count);',
+              '            var vals = new List<string>();',
+              '            for (int q0 = i + 2; q0 < Math.Min(d.Length, i + 24); q0++)',
+              '            {',
+              '                int q = q0;',
+              '                if (ReadV(d, ref q, out var v)) vals.Add($"{q0-i}:v={v}");',
+              '            }',
+              '            ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionCandidate|offset={i}|frameLen={d.Length}|varints={string.Join(",", vals)}|window={Convert.ToHexString(window)}|raw={Convert.ToHexString(d)}");',
+              '        }',
+              '    }',
+              ''
+            ) -join [Environment]::NewLine
+            $readAnchor = '    private static bool ReadV('
+            if (-not $s.Contains($readAnchor)) { throw "ReadV anchor missing for global/session diagnostics" }
+            $s = $s.Replace($readAnchor, $helper + [Environment]::NewLine + $readAnchor)
+          }
+
+          if ($s -notmatch 'TraceGlobalSessionCandidates\(frame, utc\)') {
+            $dispatchAnchor = '        var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);'
+            if (-not $s.Contains($dispatchAnchor)) { throw "Global/session dispatch anchor missing" }
+            $s = $s.Replace($dispatchAnchor, '        TraceGlobalSessionCandidates(frame, utc);' + [Environment]::NewLine + $dispatchAnchor)
+          }
+
           # AION 2 uses a dedicated 20 36 packet to link the short combat/session
           # actor ID to the global player ID carried by identity packets.
           if ($s -notmatch 'globalPlayerNames') {
