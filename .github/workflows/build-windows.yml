@@ -2142,6 +2142,80 @@ jobs:
             Set-Content $proj $cs
           }
 
+      - name: Add English skill localization layer
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PublicGameData.cs"
+          $d = Get-Content $p -Raw
+          $anchor = '    public static string SkillName(int raw)'
+          if (-not $d.Contains($anchor)) { throw "PublicGameData SkillName anchor missing" }
+
+          # English names are kept separate from packet decoding. These are
+          # community/global-localization names, not used to identify packets.
+          # Unknown names safely fall back to the Korean catalog string.
+          $english = @(
+            '    private static readonly Dictionary<string,string> EnglishNames = new(StringComparer.Ordinal)',
+            '    {',
+            '        ["저격"] = "Snipe",',
+            '        ["속사"] = "Quick Shot",',
+            '        ["연사"] = "Rapid Fire",',
+            '        ["나선 화살"] = "Spiral Arrow",',
+            '        ["올가미 화살"] = "Snare Arrow",',
+            '        ["표적 화살"] = "Marking Arrow",',
+            '        ["송곳 화살"] = "Piercing Arrow",',
+            '        ["화살 난사"] = "Arrow Barrage",',
+            '        ["광풍 화살"] = "Gale Arrow",',
+            '        ["폭발 덫"] = "Explosive Trap",',
+            '        ["파열 화살"] = "Rupture Arrow",',
+            '        ["제압 화살"] = "Suppression Arrow",',
+            '        ["조준 화살"] = "Aimed Arrow",',
+            '        ["충격 해제"] = "Shock Release",',
+            '        ["맹렬한 일격"] = "Fierce Strike",',
+            '        ["연속 난타"] = "Consecutive Strike",',
+            '        ["포획"] = "Capture",',
+            '        ["방패 강타"] = "Shield Strike",',
+            '        ["심판"] = "Judgment",',
+            '        ["징벌"] = "Punishment",',
+            '        ["단죄의 가호"] = "Blessing of Condemnation",',
+            '        ["회심의 일격"] = "Critical Strike",',
+            '        ["칼날 날리기"] = "Blade Throw",',
+            '        ["협공: 저주"] = "Joint Attack: Curse",',
+            '        ["정령 교감"] = "Spirit Communion",',
+            '        ["연속 역류"] = "Continuous Backflow",',
+            '        ["침식"] = "Erosion",',
+            '        ["바람의 정령: 낙하 바람"] = "Wind Spirit: Falling Wind",',
+            '        ["물의 정령: 냉기 발산"] = "Water Spirit: Cold Eruption",',
+            '        ["물의 정령: 기본 공격"] = "Water Spirit: Basic Attack",',
+            '        ["땅의 정령: 몸통 박치기"] = "Earth Spirit: Body Slam",',
+            '        ["강화: 정령의 가호"] = "Enhance: Spirit''s Benediction",',
+            '        ["정령의 가호"] = "Spirit''s Benediction",',
+            '        ["정령 융합"] = "Elemental Fusion",',
+            '        ["차원 제어"] = "Dimensional Control",',
+            '        ["불꽃 화살"] = "Flame Arrow",',
+            '        ["불꽃 폭발"] = "Flame Explosion"',
+            '    };',
+            '',
+            '    private static string LocalizeEnglish(string name)',
+            '    {',
+            '        if (string.IsNullOrWhiteSpace(name)) return name;',
+            '        if (EnglishNames.TryGetValue(name, out var english)) return english;',
+            '        return name;',
+            '    }',
+            ''
+          ) -join [Environment]::NewLine
+
+          $d = $d.Replace($anchor, $english + $anchor)
+          $d = $d.Replace('return exact;', 'return LocalizeEnglish(exact);')
+          $d = $d.Replace('return n10;', 'return LocalizeEnglish(n10);')
+          $d = $d.Replace('return n10k;', 'return LocalizeEnglish(n10k);')
+          $d = $d.Replace('return n100k;', 'return LocalizeEnglish(n100k);')
+          Set-Content $p $d
+
+          $v = Get-Content $p -Raw
+          if ($v -notmatch 'LocalizeEnglish\(exact\)' -or $v -notmatch '"Piercing Arrow"') {
+            throw "English skill localization patch failed"
+          }
+
       - name: Wire public skill names into decoded combat events
         shell: pwsh
         run: |
