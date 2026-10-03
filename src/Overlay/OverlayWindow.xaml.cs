@@ -10,7 +10,7 @@ public partial class OverlayWindow : Window
 {
     MeterSnapshot? last;
     string currentTheme = "Aion Blue/Red";
-    string currentStyle = "Classic";
+    string currentStyle = "Classic Dashboard";
     bool clickThrough;
     bool showDetails = true;
     public OverlayWindow() { InitializeComponent(); ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); }
@@ -65,81 +65,135 @@ public partial class OverlayWindow : Window
     }
 
     static readonly string[] ThemeNames = { "Aion Blue/Red", "Neon Spectrum", "Void Purple", "Emerald Glass", "Solar Flare", "Ice Crystal" };
-    static readonly string[] StyleNames = { "Classic", "Compact", "Minimal", "Glass", "Tournament" };
+    static readonly string[] StyleNames = { "Classic Dashboard", "Bars Only", "Raid Compact", "Glass Cards", "Tournament" };
 
     void ApplyOverlayStyle(string name)
     {
         currentStyle=name;
-        // Reset shared layout properties first so every selection is reversible.
-        Tabs.Visibility=Visibility.Visible;
-        FooterBar.Visibility=Visibility.Visible;
+        // Full reset: every preset starts from the same known layout.
+        Width=780; Height=560; MinWidth=560; MinHeight=380;
+        MainGrid.RowDefinitions[0].Height=new GridLength(42);
+        MainGrid.RowDefinitions[1].Height=new GridLength(42);
+        MainGrid.RowDefinitions[2].Height=new GridLength(1,GridUnitType.Star);
+        MainGrid.RowDefinitions[3].Height=new GridLength(66);
         HeaderBar.Visibility=Visibility.Visible;
+        ToolbarGrid.Visibility=Visibility.Visible;
+        FooterBar.Visibility=Visibility.Visible;
         DetailPanel.Visibility=showDetails?Visibility.Visible:Visibility.Collapsed;
+        ContentGrid.ColumnDefinitions[0].Width=new GridLength(1.7,GridUnitType.Star);
+        ContentGrid.ColumnDefinitions[1].Width=new GridLength(8);
+        ContentGrid.ColumnDefinitions[2].Width=new GridLength(1,GridUnitType.Star);
         Root.CornerRadius=new CornerRadius(9);
         Root.BorderThickness=new Thickness(1.4);
+        Root.Opacity=1;
+        Rows.Opacity=1;
         Rows.BorderThickness=new Thickness(1);
         Rows.Margin=new Thickness(0);
-        HeaderBar.Height=double.NaN;
-        FooterBar.Opacity=1;
         DetailPanel.Opacity=1;
+        HeaderBar.CornerRadius=new CornerRadius(8,8,0,0);
+        FooterBar.CornerRadius=new CornerRadius(0,0,8,8);
 
         switch(name)
         {
-            case "Compact":
-                Width=640; Height=430; MinWidth=520; MinHeight=320;
-                DetailPanel.Visibility=Visibility.Collapsed;
+            case "Bars Only":
+                Width=540; Height=330; MinWidth=420; MinHeight=240;
+                MainGrid.RowDefinitions[0].Height=new GridLength(34);
+                MainGrid.RowDefinitions[1].Height=new GridLength(0);
+                MainGrid.RowDefinitions[3].Height=new GridLength(0);
+                ToolbarGrid.Visibility=Visibility.Collapsed;
                 FooterBar.Visibility=Visibility.Collapsed;
-                Root.CornerRadius=new CornerRadius(6);
-                Root.BorderThickness=new Thickness(1);
-                break;
-            case "Minimal":
-                Width=570; Height=360; MinWidth=480; MinHeight=280;
-                Tabs.Visibility=Visibility.Collapsed;
                 DetailPanel.Visibility=Visibility.Collapsed;
-                FooterBar.Visibility=Visibility.Collapsed;
-                Root.CornerRadius=new CornerRadius(3);
+                ContentGrid.ColumnDefinitions[0].Width=new GridLength(1,GridUnitType.Star);
+                ContentGrid.ColumnDefinitions[1].Width=new GridLength(0);
+                ContentGrid.ColumnDefinitions[2].Width=new GridLength(0);
+                Root.CornerRadius=new CornerRadius(4);
                 Root.BorderThickness=new Thickness(1);
                 Rows.BorderThickness=new Thickness(0);
                 break;
-            case "Glass":
-                Width=780; Height=560; MinWidth=560; MinHeight=380;
-                Root.Opacity=.88;
-                Root.CornerRadius=new CornerRadius(16);
+            case "Raid Compact":
+                Width=650; Height=410; MinWidth=500; MinHeight=300;
+                MainGrid.RowDefinitions[0].Height=new GridLength(36);
+                MainGrid.RowDefinitions[1].Height=new GridLength(34);
+                MainGrid.RowDefinitions[3].Height=new GridLength(38);
+                DetailPanel.Visibility=Visibility.Collapsed;
+                ContentGrid.ColumnDefinitions[0].Width=new GridLength(1,GridUnitType.Star);
+                ContentGrid.ColumnDefinitions[1].Width=new GridLength(0);
+                ContentGrid.ColumnDefinitions[2].Width=new GridLength(0);
+                Root.CornerRadius=new CornerRadius(2);
                 Root.BorderThickness=new Thickness(1);
-                Rows.Opacity=.92;
-                DetailPanel.Opacity=.92;
+                Rows.BorderThickness=new Thickness(0,1,0,1);
+                break;
+            case "Glass Cards":
+                Width=840; Height=590; MinWidth=600; MinHeight=400;
+                Root.Opacity=.82;
+                Root.CornerRadius=new CornerRadius(20);
+                Root.BorderThickness=new Thickness(1);
+                Rows.Opacity=.90;
+                Rows.Margin=new Thickness(5);
+                DetailPanel.Opacity=.90;
+                HeaderBar.CornerRadius=new CornerRadius(19,19,8,8);
+                FooterBar.CornerRadius=new CornerRadius(8,8,19,19);
                 break;
             case "Tournament":
-                Width=900; Height=620; MinWidth=680; MinHeight=440;
+                Width=960; Height=640; MinWidth=720; MinHeight=460;
+                MainGrid.RowDefinitions[0].Height=new GridLength(52);
+                MainGrid.RowDefinitions[1].Height=new GridLength(46);
+                MainGrid.RowDefinitions[3].Height=new GridLength(72);
+                ContentGrid.ColumnDefinitions[0].Width=new GridLength(2.2,GridUnitType.Star);
+                ContentGrid.ColumnDefinitions[2].Width=new GridLength(.8,GridUnitType.Star);
                 Root.CornerRadius=new CornerRadius(0);
-                Root.BorderThickness=new Thickness(2);
+                Root.BorderThickness=new Thickness(3,1,3,1);
+                HeaderBar.CornerRadius=new CornerRadius(0);
+                FooterBar.CornerRadius=new CornerRadius(0);
                 Rows.BorderThickness=new Thickness(0,2,0,2);
-                FooterBar.Opacity=.96;
-                break;
-            default:
-                Width=780; Height=560; MinWidth=560; MinHeight=380;
-                Root.Opacity=1;
-                Rows.Opacity=1;
                 break;
         }
-
-        // Ensure opacity changes from Glass never leak into another style.
-        if(name!="Glass") { Root.Opacity=1; Rows.Opacity=1; DetailPanel.Opacity=1; }
+        ApplyTheme(currentTheme);
     }
     void ApplyTheme(string name)
     {
+        currentTheme=name;
         var p = name switch {
-            "Neon Spectrum" => ("#E80B1022","#FF2D55","#00E5FF","#151A36"),
-            "Void Purple" => ("#ED100B22","#B65CFF","#FF4FD8","#21113B"),
-            "Emerald Glass" => ("#E9081D1B","#20E3B2","#56F39A","#0E302B"),
-            "Solar Flare" => ("#ED211008","#FF5A36","#FFC857","#3A170D"),
-            "Ice Crystal" => ("#EB071B2D","#4CC9F0","#BDEBFF","#0B2A42"),
-            _ => ("#F20A1630","#E53935","#2F80ED","#101F3D")
+            "Neon Spectrum" => ("#E80B1022","#FF2D55","#00E5FF","#151A36","#00E5FF","#FF6B8A","#101A31"),
+            "Void Purple" => ("#ED100B22","#B65CFF","#FF4FD8","#21113B","#D9A3FF","#FF82E5","#1A102D"),
+            "Emerald Glass" => ("#E9081D1B","#20E3B2","#56F39A","#0E302B","#7CFFD8","#A4FFBE","#0B2522"),
+            "Solar Flare" => ("#ED211008","#FF5A36","#FFC857","#3A170D","#FFD27A","#FF8066","#2D120A"),
+            "Ice Crystal" => ("#EB071B2D","#4CC9F0","#BDEBFF","#0B2A42","#CFF4FF","#78D8FF","#091F31"),
+            _ => ("#F20A1630","#E53935","#2F80ED","#101F3D","#8FB8FF","#FF4D5A","#0E1C35")
         };
-        Root.Background=Brush(p.Item1); Root.BorderBrush=Brush(p.Item2);
-        HeaderBar.Background=Brush(p.Item4); HeaderBar.BorderBrush=Brush(p.Item3);
-        FooterBar.Background=Brush(p.Item4); FooterBar.BorderBrush=Brush(p.Item3);
-        DetailPanel.BorderBrush=Brush(p.Item3);
+        var bg=Brush(p.Item1); var accent=Brush(p.Item2); var secondary=Brush(p.Item3);
+        var chrome=Brush(p.Item4); var primaryText=Brush(p.Item5); var hot=Brush(p.Item6); var control=Brush(p.Item7);
+        Root.Background=bg; Root.BorderBrush=accent;
+        HeaderBar.Background=chrome; HeaderBar.BorderBrush=secondary;
+        FooterBar.Background=chrome; FooterBar.BorderBrush=secondary;
+        Rows.Background=BrushWithOpacity(p.Item4, .62); Rows.BorderBrush=secondary;
+        DetailPanel.Background=BrushWithOpacity(p.Item4, .72); DetailPanel.BorderBrush=secondary;
+        TitleAion.Foreground=primaryText; TitleDps.Foreground=hot;
+        GroupDps.Foreground=primaryText; StatusText.Foreground=primaryText;
+        TargetHp.Foreground=hot; BossHp.Foreground=accent; BossHp.Background=control;
+        Segment.Background=control; Segment.Foreground=Brush("#F4F7FF");
+        foreach(var item in Tabs.Items.OfType<System.Windows.Controls.TabItem>()) {
+            item.Background=control; item.BorderBrush=secondary; item.Foreground=primaryText;
+        }
+        foreach(var button in FindVisualChildren<System.Windows.Controls.Button>(this)) {
+            button.Background=control; button.BorderBrush=secondary; button.Foreground=Brush("#F4F7FF");
+        }
+    }
+
+    static Brush BrushWithOpacity(string hex, double opacity)
+    {
+        var color=(Color)ColorConverter.ConvertFromString(hex);
+        return new SolidColorBrush(Color.FromArgb((byte)(255*opacity),color.R,color.G,color.B));
+    }
+
+    static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T:DependencyObject
+    {
+        if(root is null) yield break;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) {
+            var child=VisualTreeHelper.GetChild(root,i);
+            if(child is T match) yield return match;
+            foreach(var nested in FindVisualChildren<T>(child)) yield return nested;
+        }
     }
 
     void OpenSelectedReport(object sender, RoutedEventArgs e)
