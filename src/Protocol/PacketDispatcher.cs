@@ -90,8 +90,13 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         RememberCombatEntity(target);
         var dtype = DecodeType((byte)damageType, flagByte);
         Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} flagByte=0x{flagByte:X2} decoded={dtype}",d.Length));
-        return new(CombatKind.Damage, checked((long)actor), $"Actor {actor}", checked((long)target), $"Target {target}",
-            SkillName(checked((int)skill)), (long)damage, dtype, 0,0,"",0, ClassFromSkill(skill));
+        long actorId = checked((long)actor);
+        long targetId = checked((long)target);
+        var actorName = ResolveName(actorId, "Actor");
+        var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
+            ? knownIdentity.ClassName : ClassFromSkill(skill);
+        return new(CombatKind.Damage, actorId, actorName, targetId, ResolveName(targetId, "Target"),
+            SkillName(checked((int)skill)), (long)damage, dtype, 0,0,"",0, actorClass);
     }
 
     private Aion2Decoded? TryDot(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -106,8 +111,13 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         RememberCombatEntity(actor); RememberCombatEntity(target);
         uint skill=raw/100; if (skill==0) return null;
         if (damage<=0 && heal<=0) return null;
-        return new(damage>0?CombatKind.Damage:CombatKind.Heal, checked((long)actor),$"Actor {actor}",checked((long)target),$"Target {target}",
-            SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, ClassFromSkill((int)skill));
+        long actorId = checked((long)actor);
+        long targetId = checked((long)target);
+        var actorName = ResolveName(actorId, "Actor");
+        var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
+            ? knownIdentity.ClassName : ClassFromSkill((int)skill);
+        return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveName(targetId, "Target"),
+            SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
     }
 
     private Aion2Decoded? TryBossHp(ReadOnlySpan<byte> d, int p, DateTime utc)
