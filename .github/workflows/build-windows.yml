@@ -852,6 +852,39 @@ jobs:
             throw "Structural alternate damage fallback verification failed"
           }
 
+      - name: Correct crit classification and trace raw flags
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Current upstream treats damageType==3 as the crit/special bit.
+          # Our old decoder incorrectly treated bit 0x02 of damageType as Crit,
+          # which classified nearly every observed direct hit as a crit.
+          $old = 'if ((t & 0x02)!=0) return DamageType.Crit;'
+          $new = 'if (t == 3) return DamageType.Crit;'
+          if ($s.Contains($old)) {
+            $s = $s.Replace($old, $new)
+          }
+          elseif ($s -notmatch 'if \(t == 3\) return DamageType.Crit;') {
+            throw "Crit decode anchor not found"
+          }
+
+          # Preserve directional flag precedence for now and expose the raw values
+          # in diagnostics so the next capture can validate back/front semantics.
+          $anchor = 'var dtype = DecodeType((byte)damageType, flagByte);'
+          if ($s.Contains($anchor) -and $s -notmatch 'rawType=') {
+            $s = $s.Replace($anchor, $anchor + [Environment]::NewLine + '        Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} flagByte=0x{flagByte:X2} decoded={dtype}",d.Length));')
+          }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -match '\(t & 0x02\)!=0' -or
+              $verify -notmatch 't == 3' -or
+              $verify -notmatch 'rawType=') {
+            throw "Crit classification patch verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
