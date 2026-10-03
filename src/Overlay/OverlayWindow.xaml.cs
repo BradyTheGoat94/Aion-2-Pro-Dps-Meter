@@ -34,6 +34,8 @@ public partial class OverlayWindow : Window
         var max=Math.Max(1,s.Players.FirstOrDefault()?.Dps??1);
         Rows.ItemsSource=s.Players.Select((p,i)=>new Row(i+1,p.Name,p.ClassName,F(p.Dps),F(p.Damage),$"{p.Share:0.0}%",Brush(p.ClassName),Math.Max(0,150*p.Dps/max),Math.Clamp(100*p.Dps/max,0,100),p)).ToList();
         Rows.SelectedItem=Rows.Items.Cast<Row>().FirstOrDefault(r=>r.Stats.ActorId==selectedActor);
+        EmptyRows.Visibility=s.Players.Count==0?Visibility.Visible:Visibility.Collapsed;
+        if(Rows.SelectedItem==null){SelectedPlayer.Text="Select a player";SelectedMeta.Text="";}
         UpdateSkills();
     }
     static Brush Brush(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c.StartsWith("#",StringComparison.Ordinal)?c:Colors.TryGetValue(c,out var v)?v:Colors["Unknown"]));

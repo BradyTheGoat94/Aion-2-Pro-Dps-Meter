@@ -68,7 +68,7 @@ public partial class MainWindow : Window
             lock(diagnosticsGate)
             {
                 parsedEvents++;
-                lastEvent=$"kind={e.Kind} amount={e.Amount} src={e.SourceId} tgt={e.TargetId} skill={e.Skill} type={e.DamageType}";
+                lastEvent=$"kind={e.Kind} amount={e.Amount} src={e.SourceId} name={e.Source} tgt={e.TargetId} skill={e.Skill} type={e.DamageType}";
                 if(e.Kind==CombatKind.Damage) {damageEvents++;if(e.Amount>0)acceptedDamageEvents++;}
                 else if(e.Kind==CombatKind.Heal)healEvents++;
                 else if(e.Kind==CombatKind.TargetHp)hpEvents++;
