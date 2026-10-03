@@ -14,6 +14,7 @@ public partial class OverlayWindow : Window
     public Func<string,Task<MeterSnapshot?>>? HistoryLoader {get;set;}
     MeterSnapshot? last;
     MeterSnapshot? historicalSnapshot;
+    string? historicalPath;
     bool loadingHistory;
     long? selectedActor;
     string SelectedName(long id)=>last?.Players.FirstOrDefault(p=>p.ActorId==id)?.Name??$"Actor {id}";
@@ -77,7 +78,7 @@ public partial class OverlayWindow : Window
                 catch { }
             }
             FightHistory.ItemsSource=choices;
-            FightHistory.SelectedIndex=historicalSnapshot==null?0:Math.Max(0,choices.FindIndex(x=>x.Path==((FightHistory.SelectedItem as HistoryChoice)?.Path)));
+            FightHistory.SelectedIndex=historicalPath==null?0:Math.Max(0,choices.FindIndex(x=>x.Path==historicalPath));
         }
         finally {loadingHistory=false;}
     }
@@ -88,6 +89,7 @@ public partial class OverlayWindow : Window
         if(choice.Path==null)
         {
             historicalSnapshot=null;
+            historicalPath=null;
             if(last!=null)Render(last);
             return;
         }
@@ -97,6 +99,7 @@ public partial class OverlayWindow : Window
             var saved=await HistoryLoader(choice.Path);
             if(saved==null)return;
             historicalSnapshot=saved;
+            historicalPath=choice.Path;
             selectedActor=null;
             Render(saved);
         }
@@ -107,6 +110,7 @@ public partial class OverlayWindow : Window
     {
         if(Segment==null)return;
         historicalSnapshot=null;
+        historicalPath=null;
         if(FightHistory!=null && FightHistory.SelectedIndex>0)FightHistory.SelectedIndex=0;
         if(last!=null)Render(last);
     }
@@ -157,8 +161,8 @@ public partial class OverlayWindow : Window
         {
             panel.Children.Add(new System.Windows.Controls.TextBlock {Text="End fight after inactivity (seconds)"});
             var timeout=new System.Windows.Controls.Slider {Minimum=8,Maximum=120,Value=Engine.InactivityTimeout.TotalSeconds,TickFrequency=1,IsSnapToTickEnabled=true,Margin=new Thickness(0,5,0,8)};
-            timeout.ValueChanged += (_,__)=>Engine.InactivityTimeout=TimeSpan.FromSeconds(timeout.Value);panel.Children.Add(timeout);
-            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="Boss inactivity uses 120s only when a verified boss signal is supplied.",TextWrapping=TextWrapping.Wrap,FontSize=11});
+            timeout.ValueChanged += (_,__)=> { var value=TimeSpan.FromSeconds(timeout.Value); Engine.InactivityTimeout=value; Engine.BossInactivityTimeout=value; };panel.Children.Add(timeout);
+            panel.Children.Add(new System.Windows.Controls.TextBlock {Text="Default is 8 seconds. The same inactivity timeout applies to normal and boss fights.",TextWrapping=TextWrapping.Wrap,FontSize=11});
             var finish=new System.Windows.Controls.Button {Content="Finish current fight",Margin=new Thickness(0,8,0,0)};
             finish.Click += (_,__)=>Engine.ResetFight();panel.Children.Add(finish);
         }
