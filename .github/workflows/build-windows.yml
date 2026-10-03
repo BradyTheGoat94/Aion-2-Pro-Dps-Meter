@@ -619,56 +619,60 @@ jobs:
           $p = "src/Protocol/PacketDispatcher.cs"
           $s = Get-Content $p -Raw
 
-          # Match the existing skill varint read regardless of whitespace/newline style.
           $pattern = 'if\s*\(\s*!ReadV\(d,\s*ref\s+p,\s*out\s+var\s+skill\)\s*\|\|\s*skill\s*==\s*0\s*\|\|\s*skill\s*>\s*200_000_000\s*\)\s*return\s+null\s*;'
           $replacement = 'if (!TryReadSkillField(d, ref p, out var skill)) return null;'
           $updated = [regex]::Replace($s, $pattern, $replacement, 1)
+
           if ($updated -eq $s -and $s -notmatch 'TryReadSkillField\(d,\s*ref\s+p') {
             throw "Could not locate damage skill read in generated PacketDispatcher.cs"
           }
           $s = $updated
 
           if ($s -notmatch 'private static bool TryReadSkillField') {
-            $helper = @'
-    private static bool TryReadSkillField(ReadOnlySpan<byte> d, ref int p, out int skill)
-    {
-        skill = 0;
-        for (int i = 0; i < 7 && p + i + 4 <= d.Length; i++)
-        {
-            int raw = d[p+i] | (d[p+i+1] << 8) | (d[p+i+2] << 16) | (d[p+i+3] << 24);
-            if (raw <= 0) continue;
-
-            // Current public parser resolves a fixed-width LE skill candidate
-            // and advances by scan offset + 5 before reading damageType.
-            int candidate = raw;
-            if (candidate >= 1_000_000 && candidate < 200_000_000)
-            {
-                skill = candidate;
-                p += i + 5;
-                return true;
-            }
-            if (raw % 100 == 0)
-            {
-                candidate = raw / 100;
-                if (candidate >= 1_000_000 && candidate < 200_000_000)
-                {
-                    skill = candidate;
-                    p += i + 5;
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-'@
+            $helperLines = @(
+              '    private static bool TryReadSkillField(ReadOnlySpan<byte> d, ref int p, out int skill)',
+              '    {',
+              '        skill = 0;',
+              '        for (int i = 0; i < 7 && p + i + 4 <= d.Length; i++)',
+              '        {',
+              '            int raw = d[p+i] | (d[p+i+1] << 8) | (d[p+i+2] << 16) | (d[p+i+3] << 24);',
+              '            if (raw <= 0) continue;',
+              '',
+              '            int candidate = raw;',
+              '            if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '            {',
+              '                skill = candidate;',
+              '                p += i + 5;',
+              '                return true;',
+              '            }',
+              '',
+              '            if (raw % 100 == 0)',
+              '            {',
+              '                candidate = raw / 100;',
+              '                if (candidate >= 1_000_000 && candidate < 200_000_000)',
+              '                {',
+              '                    skill = candidate;',
+              '                    p += i + 5;',
+              '                    return true;',
+              '                }',
+              '            }',
+              '        }',
+              '        return false;',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
             $anchor = '    private static bool ReadV('
-            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing in PacketDispatcher.cs" }
-            $s = $s.Replace($anchor, $helper + $anchor)
+            if (-not $s.Contains($anchor)) {
+              throw "ReadV anchor missing in PacketDispatcher.cs"
+            }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
           }
 
           Set-Content $p $s
-          if ((Get-Content $p -Raw) -notmatch 'TryReadSkillField\(d,\s*ref\s+p') {
+
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'TryReadSkillField\(d,\s*ref\s+p') {
             throw "Damage parser verification failed"
           }
 
