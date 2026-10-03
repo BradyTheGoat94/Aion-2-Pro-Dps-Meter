@@ -8,6 +8,7 @@ public sealed class TcpStreamReassembler
     private readonly object gate=new();
     public TimeSpan GapTimeout { get; set; } = TimeSpan.FromSeconds(5);
     public event Action<string>? StreamReset;
+    public event Action? DuplicateDiscarded;
     public IReadOnlyList<byte[]> Push(string flowKey,uint sequence,byte[] payload) => Push(flowKey,sequence,payload,DateTime.UtcNow);
     public IReadOnlyList<byte[]> Push(string flowKey,uint sequence,byte[] payload,DateTime utc)
     {
@@ -26,7 +27,7 @@ public sealed class TcpStreamReassembler
             if(delta<0)
             {
                 long overlap=-(long)delta;
-                if(overlap>=payload.Length) return output;
+                if(overlap>=payload.Length) { DuplicateDiscarded?.Invoke(); return output; }
                 payload=payload.AsSpan((int)overlap).ToArray(); sequence=f.Next.Value;
             }
             if(!f.Pending.Any(x=>x.Seq==sequence && x.Data.Length>=payload.Length)) f.Pending.Add((sequence,payload.ToArray()));

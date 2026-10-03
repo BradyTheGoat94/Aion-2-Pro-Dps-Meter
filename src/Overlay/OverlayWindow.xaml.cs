@@ -115,7 +115,7 @@ public partial class OverlayWindow : Window
         };
         panel.Children.Add(historyButton);
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Tip: double-click any player row for a detailed report.", Foreground=Brush("#8FB8FF"), TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,16,0,0) });
-        w.Content=panel; w.ShowDialog();
+        w.Content=new System.Windows.Controls.ScrollViewer {Content=panel,VerticalScrollBarVisibility=System.Windows.Controls.ScrollBarVisibility.Auto}; w.ShowDialog();
     }
 
     static readonly string[] ThemeNames = { "Aion Blue/Red", "Neon Spectrum", "Void Purple", "Emerald Glass", "Solar Flare", "Ice Crystal" };
@@ -274,7 +274,7 @@ public partial class OverlayWindow : Window
         skillGrid.ItemsSource=last.Skills.Where(x=>x.ActorId==r.Stats.ActorId).ToArray(); skillsTab.Content=skillGrid; tabs.Items.Add(skillsTab);
         var eventsTab = new System.Windows.Controls.TabItem { Header="Recent Events" };
         var events = new System.Windows.Controls.ListBox { Background=Brush("#101827"), Foreground=Brush("#DDE9FF"), FontFamily=new FontFamily("Consolas") };
-        events.ItemsSource=last.RecentEvents.Where(x=>x.SourceId==r.Stats.EntityId || x.TargetId==r.Stats.EntityId).Reverse().Select(x=>$"{x.Utc:HH:mm:ss.fff}  {x.Skill,-28} {x.Amount,10:N0}  {x.DamageType}  {x.DamageFlags}");
+        events.ItemsSource=last.RecentEvents.Where(x=>x.SourceId==r.Stats.ActorId || x.TargetId==r.Stats.ActorId).Reverse().Select(x=>$"{x.Utc:HH:mm:ss.fff}  {x.Skill,-28} {x.Amount,10:N0}  {x.DamageType}  {x.DamageFlags}");
         eventsTab.Content=events; tabs.Items.Add(eventsTab);
         var buffTab=new System.Windows.Controls.TabItem {Header="Buffs / Debuffs"};
         buffTab.Content=new System.Windows.Controls.DataGrid {IsReadOnly=true,ItemsSource=last.Buffs.Where(x=>x.TargetId==r.Stats.ActorId).ToArray()}; tabs.Items.Add(buffTab);

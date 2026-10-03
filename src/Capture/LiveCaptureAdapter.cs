@@ -18,6 +18,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     private DateTime lastPayload,lastEvent;
     private long dropped;
     private bool disposed;
+    public Task Completion => worker;
     public event Action<CombatEvent>? EventReceived;
     public event Action<string>? StatusChanged;
     public event Action? PacketCaptured;
@@ -30,6 +31,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     public LiveCaptureAdapter(IAion2Decoder decoder)
     {
         this.decoder=decoder;
+        reassembler.DuplicateDiscarded += ()=>DuplicateSuppressed?.Invoke();
         reassembler.StreamReset += key =>
         {
             if(selectedDecoder is CurrentClientDecoder selected) selected.ResetStream(key);
@@ -96,8 +98,9 @@ public sealed class LiveCaptureAdapter : IDisposable
             }
             candidates[key]=(candidate.Decoder,utc); active=candidate.Decoder;
         }
+        if(lockedConversation!=null)lastPayload=utc;
         var chunks=reassembler.Push(direction,unchecked(tcp.SequenceNumber+(tcp.Synchronize?1u:0u)),tcp.PayloadData,utc);
-        if(chunks.Count==0) { DuplicateSuppressed?.Invoke(); return; }
+        if(chunks.Count==0) return;
         var decoded=new List<Aion2Decoded>();
         foreach(var chunk in chunks) decoded.AddRange(active is CurrentClientDecoder c?c.DecodeStream(direction,chunk,utc):active.Decode(chunk,utc));
         if(lockedConversation==null)
@@ -116,6 +119,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     private IAion2Decoder? selectedDecoder;
     public void Dispose()
     {
+        if(disposed)return;
         disposed=true;
         foreach(var d in devices) { d.OnPacketArrival-=OnPacket; try { d.StopCapture(); } catch {} try { d.Close(); } catch {} }
         devices.Clear(); queue.CompleteAdding();

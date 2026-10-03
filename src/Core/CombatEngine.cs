@@ -83,12 +83,12 @@ public sealed class CombatEngine
     }
     private void ApplyTo(Encounter encounter, CombatEvent e, DateTime t)
     {
-        encounter.Events.Enqueue(e);
-        while(encounter.Events.Count > 2000) encounter.Events.Dequeue();
         long rawSource=Owner(e.SourceId), rawTarget=Owner(e.TargetId);
         long source=Key(rawSource),targetId=Key(rawTarget);
         if (identities.TryGetValue(rawSource, out var si)) encounter.Names[source] = si;
         if (identities.TryGetValue(rawTarget, out var ti)) encounter.Names[targetId] = ti;
+        encounter.Events.Enqueue(e with {SourceId=source,TargetId=targetId,Source=encounter.Names.GetValueOrDefault(source)?.Name??e.Source,Target=encounter.Names.GetValueOrDefault(targetId)?.Name??e.Target});
+        while(encounter.Events.Count > 2000) encounter.Events.Dequeue();
         if ((e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0)
         {
             var category = e.Kind == CombatKind.Damage ? MeterCategory.Damage : MeterCategory.Healing;
@@ -97,6 +97,9 @@ public sealed class CombatEngine
             if (encounter.LastActivity.HasValue)
                 encounter.ActiveSeconds += Math.Min(5, Math.Max(0, (t-encounter.LastActivity.Value).TotalSeconds));
             encounter.LastActivity=t;
+            if(encounter.ActorLast.TryGetValue(source,out var previous))
+                encounter.ActorActive[source]=encounter.ActorActive.GetValueOrDefault(source)+Math.Min(5,Math.Max(0,(t-previous).TotalSeconds));
+            encounter.ActorLast[source]=t;
             if (e.Kind == CombatKind.Damage && e.TargetId != 0)
             {
                 encounter.TargetDamage.TryGetValue(e.TargetId, out var damage);
@@ -149,6 +152,7 @@ public sealed class CombatEngine
         history.Add(current);
         if(history.Count>100) history.RemoveAt(0);
         overall.CompletedDuration+=current.Duration;
+        overall.LastActivity=null;overall.ActorLast.Clear();
         return result;
     }
     public void ResetFight()
@@ -186,7 +190,7 @@ public sealed class CombatEngine
             var stats=e.Metrics.Where(y=>y.Key.Id==x.Key && y.Key.Category==category).Select(y=>y.Value).ToList();
             long hits=stats.Sum(y=>y.Hits), crits=stats.Sum(y=>y.Crits);
             bool rate=category is MeterCategory.Damage or MeterCategory.Healing or MeterCategory.DamageTaken;
-            return new PlayerStats(name.Name,name.ClassName,x.Value,rate?x.Value/divisor:x.Value,total==0?0:x.Value*100.0/total,hits,hits==0?0:crits*100.0/hits,x.Key,x.Value/Math.Max(1,e.ActiveSeconds),entityKeys.FirstOrDefault(y=>y.Value==x.Key).Key is var raw && raw!=0?raw:x.Key);
+            return new PlayerStats(name.Name,name.ClassName,x.Value,rate?x.Value/divisor:x.Value,total==0?0:x.Value*100.0/total,hits,hits==0?0:crits*100.0/hits,x.Key,x.Value/Math.Max(1,e.ActorActive.GetValueOrDefault(x.Key)),entityKeys.FirstOrDefault(y=>y.Value==x.Key).Key is var raw && raw!=0?raw:x.Key);
         }).OrderByDescending(x=>x.Damage).ToArray();
         var skills=e.Metrics.Where(x=>x.Key.Category==category).Select(x=>new SkillStats(x.Key.Skill,x.Value.Amount,x.Value.Hits,x.Value.Amount/divisor,
             x.Key.Id,x.Value.Crits,x.Value.Hits==0?0:x.Value.Crits*100.0/x.Value.Hits,totals.GetValueOrDefault(x.Key.Id)==0?0:x.Value.Amount*100.0/totals[x.Key.Id],
@@ -204,6 +208,7 @@ public sealed class CombatEngine
     {
         public Guid Id=Guid.NewGuid(); public DateTime? Start,Last,LastActivity; public bool Completed,Boss; public string EndReason="";
         public double Duration,CompletedDuration,ActiveSeconds; public long TargetId; public TargetStats? Target;
+        public Dictionary<long,DateTime> ActorLast=new(); public Dictionary<long,double> ActorActive=new();
         public Dictionary<long,Identity> Names=new(); public Dictionary<long,long> TargetDamage=new();
         public Dictionary<(long Id,MeterCategory Category,string Skill),Stat> Metrics=new();
         public Dictionary<(string Name,long Source,long Target,bool Debuff),BuffWindow> Buffs=new(); public Queue<CombatEvent> Events=new();

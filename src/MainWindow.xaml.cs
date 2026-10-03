@@ -1,4 +1,5 @@
 using System.Windows;
+using System.ComponentModel;
 using System.Windows.Threading;
 using Aion2DPSPro.Capture;
 using Aion2DPSPro.Overlay;
@@ -91,8 +92,22 @@ public partial class MainWindow : Window
             LastDecoder.Text=lastDecoder; LastEvent.Text=LatestEvent.Text=lastEvent; EventInspector.Text=string.Join(Environment.NewLine,inspector.Reverse()); ValidationFile.Text=validationPath;
         }
     }
-    protected override void OnClosed(EventArgs e)
+    bool allowClose,closing;
+    protected override async void OnClosing(CancelEventArgs e)
     {
-        timer.Stop();engine.ResetFight();capture.Dispose();overlay.Close();base.OnClosed(e);
+        if(allowClose) {base.OnClosing(e);return;}
+        e.Cancel=true;base.OnClosing(e);
+        if(closing)return;
+        closing=true;timer.Stop();capture.Dispose();
+        try
+        {
+            await capture.Completion;
+            engine.ResetFight();
+            Task pending;lock(diagnosticsGate)pending=saveTail;
+            await pending;
+            if(historyError.Length>0)MessageBox.Show(this,historyError,"History was not saved");
+        }
+        catch(Exception ex) {MessageBox.Show(this,ex.Message,"Unable to finish saving history");}
+        overlay.Close();allowClose=true;Close();
     }
 }
