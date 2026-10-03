@@ -1003,6 +1003,28 @@ jobs:
             throw "Identity correlation tracer verification failed"
           }
 
+      - name: Record identity correlation diagnostics
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          $success = 'Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best} idCandidates={idCandidates}",d.Length));'
+          $successNew = $success + [Environment]::NewLine + '        ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|idCandidates={idCandidates}|raw={Convert.ToHexString(d)}");'
+          if ($s.Contains($success) -and $s -notmatch 'tag=identity\|packet=') {
+            $s = $s.Replace($success, $successNew)
+          }
+
+          $fail = 'Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={DescribeIdentityCandidates(d, start)}",d.Length)); return null;'
+          $failNew = 'var failedCandidates = DescribeIdentityCandidates(d, start);' + [Environment]::NewLine + '        Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={failedCandidates}",d.Length));' + [Environment]::NewLine + '        ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name=|idCandidates={failedCandidates}|raw={Convert.ToHexString(d)}"); return null;'
+          if ($s.Contains($fail)) { $s = $s.Replace($fail, $failNew) }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'tag=identity\|packet=' -or $verify -notmatch 'idCandidates=') {
+            throw "Identity validation logging patch failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
