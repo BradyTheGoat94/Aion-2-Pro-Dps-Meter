@@ -19,7 +19,7 @@ public partial class OverlayWindow : Window
     string currentStyle = "Classic Dashboard";
     bool clickThrough;
     bool showDetails = true;
-    public OverlayWindow() { InitializeComponent(); CategoryPicker.ItemsSource=new[]{"Damage","Healing","Damage Taken","Deaths","Buffs","Debuffs","Interrupts","Dispels"}; CategoryPicker.SelectedIndex=0; ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); }
+    public OverlayWindow() { InitializeComponent(); CategoryPicker.ItemsSource=new[]{"Damage","Healing","Damage Taken","Deaths","Buffs","Debuffs","Interrupts","Dispels"}; CategoryPicker.SelectedIndex=0; ApplyTheme(currentTheme); ApplyOverlayStyle(currentStyle); LoadPreferences(); }
     static readonly Dictionary<string,string> Colors = new(StringComparer.OrdinalIgnoreCase) {
         ["Gladiator"]="#E65353", ["Templar"]="#E8903D", ["Assassin"]="#C45CFF", ["Ranger"]="#F2C94C",
         ["Sorcerer"]="#4DA3FF", ["Spiritmaster"]="#48C9D8", ["Cleric"]="#6DDB72", ["Chanter"]="#D6DCE8", ["Brawler"]="#FF7A45", ["Unknown"]="#AAB6CC" };
@@ -116,7 +116,7 @@ public partial class OverlayWindow : Window
         };
         panel.Children.Add(historyButton);
         panel.Children.Add(new System.Windows.Controls.TextBlock { Text="Tip: double-click any player row for a detailed report.", Foreground=Brush("#8FB8FF"), TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,16,0,0) });
-        w.Content=new System.Windows.Controls.ScrollViewer {Content=panel,VerticalScrollBarVisibility=System.Windows.Controls.ScrollBarVisibility.Auto}; w.ShowDialog();
+        w.Content=new System.Windows.Controls.ScrollViewer {Content=panel,VerticalScrollBarVisibility=System.Windows.Controls.ScrollBarVisibility.Auto}; w.ShowDialog(); SavePreferences();
     }
 
     static readonly string[] ThemeNames = { "Aion Blue/Red", "Neon Spectrum", "Void Purple", "Emerald Glass", "Solar Flare", "Ice Crystal" };
@@ -285,12 +285,42 @@ public partial class OverlayWindow : Window
         var report=new CombatReportWindow(provider,r.Stats.ActorId,(MeterCategory)Math.Clamp(Tabs.SelectedIndex,0,7)) {Owner=this};
         report.Show();
     }
+    static string PreferencesPath=>System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Aion2DPSPro","overlay-settings.json");
+    public sealed record OverlayPreferences(string Style,string Theme,double Opacity,bool Details,bool Topmost,double Width,double Height,double Left,double Top);
+    void LoadPreferences()
+    {
+        try {
+            if(!System.IO.File.Exists(PreferencesPath))return;
+            var p=System.Text.Json.JsonSerializer.Deserialize<OverlayPreferences>(System.IO.File.ReadAllText(PreferencesPath));
+            if(p==null)return;
+            showDetails=p.Details;
+            if(ThemeNames.Contains(p.Theme))currentTheme=p.Theme;
+            ApplyOverlayStyle(StyleNames.Contains(p.Style)?p.Style:currentStyle);
+            if(double.IsFinite(p.Opacity))Opacity=Math.Clamp(p.Opacity,.35,1);
+            Topmost=p.Topmost;
+            if(double.IsFinite(p.Width))Width=Math.Clamp(p.Width,MinWidth,Math.Max(MinWidth,SystemParameters.VirtualScreenWidth));
+            if(double.IsFinite(p.Height))Height=Math.Clamp(p.Height,MinHeight,Math.Max(MinHeight,SystemParameters.VirtualScreenHeight));
+            if(double.IsFinite(p.Left))Left=Math.Clamp(p.Left,SystemParameters.VirtualScreenLeft,Math.Max(SystemParameters.VirtualScreenLeft,SystemParameters.VirtualScreenLeft+SystemParameters.VirtualScreenWidth-Width));
+            if(double.IsFinite(p.Top))Top=Math.Clamp(p.Top,SystemParameters.VirtualScreenTop,Math.Max(SystemParameters.VirtualScreenTop,SystemParameters.VirtualScreenTop+SystemParameters.VirtualScreenHeight-Height));
+        }
+        catch(Exception ex) when(ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+    }
+    void SavePreferences()
+    {
+        try {
+            var path=PreferencesPath;System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            var p=new OverlayPreferences(currentStyle,currentTheme,Opacity,showDetails,Topmost,Width,Height,double.IsFinite(Left)?Left:0,double.IsFinite(Top)?Top:0);
+            var temp=path+".tmp";System.IO.File.WriteAllText(temp,System.Text.Json.JsonSerializer.Serialize(p));System.IO.File.Move(temp,path,true);
+        }
+        catch(Exception ex) when(ex is System.IO.IOException or UnauthorizedAccessException) {StatusText.Text="Unable to save overlay settings";}
+    }
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e){SavePreferences();base.OnClosing(e);}
     void CategoryChanged(object sender,System.Windows.Controls.SelectionChangedEventArgs e) {
         if(Tabs==null||CategoryPicker.SelectedIndex<0)return;
         Tabs.SelectedIndex=CategoryPicker.SelectedIndex;
         if(last!=null)Render(last);
     }
-    void CloseOverlay(object s,RoutedEventArgs e)=>Hide();
+    void CloseOverlay(object s,RoutedEventArgs e){SavePreferences();Hide();}
     void Drag(object s,MouseButtonEventArgs e){
         var origin=e.OriginalSource as DependencyObject;
         while(origin!=null && origin!=HeaderBar){if(origin is System.Windows.Controls.Primitives.ButtonBase)return;origin=VisualTreeHelper.GetParent(origin);}
