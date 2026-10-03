@@ -1640,8 +1640,13 @@ jobs:
 
           $decoded = "src/Protocol/IAion2Decoder.cs"
           $a = Get-Content $decoded -Raw
-          if ($a -notmatch 'Aion2Decoded[\s\S]*SourceClass') {
-            $a = $a.Replace('string Effect = "", int Stacks = 0);', 'string Effect = "", int Stacks = 0, string SourceClass = "Unknown");')
+          if ($a -notmatch 'SourceClass') {
+            $a = [regex]::Replace(
+              $a,
+              '(public\s+sealed\s+record\s+Aion2Decoded\s*\([\s\S]*?)(\)\s*;)',
+              '$1, string SourceClass = "Unknown"$2',
+              1
+            )
           }
           Set-Content $decoded $a
 
