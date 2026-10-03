@@ -120,6 +120,53 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal("Templar", resolved.SourceClass);
     }
 
+
+    [Fact]
+    public void CombatEngine_EightSecondsIdle_ArchivesAndClearsCurrentFight()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
+            TargetId: 900, Target: "Training Target", Skill: "Strike",
+            Amount: 8000, DamageType: DamageType.Direct));
+
+        now = now.AddSeconds(7);
+        Assert.True(engine.Snapshot().InFight);
+        Assert.Empty(engine.History);
+
+        now = now.AddSeconds(1);
+        var current = engine.Snapshot();
+        Assert.False(current.InFight);
+        Assert.Equal(0, current.FightDamage);
+        Assert.Empty(current.Players);
+
+        var archived = Assert.Single(engine.History);
+        Assert.Equal(8000, archived.FightDamage);
+        Assert.Equal("Inactivity", archived.EndReason);
+        Assert.NotEqual(Guid.Empty, archived.EncounterId);
+    }
+
+    [Fact]
+    public void CombatEngine_BossFight_AlsoExpiresAfterEightSeconds()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
+            TargetId: 901, Target: "Boss", Skill: "Strike", Amount: 4000,
+            DamageType: DamageType.Direct, IsBoss: true));
+
+        now = now.AddSeconds(8);
+        _ = engine.Snapshot();
+
+        var archived = Assert.Single(engine.History);
+        Assert.Equal("Inactivity", archived.EndReason);
+        Assert.Equal(4000, archived.FightDamage);
+    }
+
     [Fact]
     public void CombatEngine_LatePlayerIdentity_RefreshesActiveEventHistory()
     {
