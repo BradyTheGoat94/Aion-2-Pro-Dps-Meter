@@ -123,6 +123,7 @@ internal static class PublicGameData
         ["쾌유의 광휘"] = "Radiant Recovery",
         ["쾌유의 광휘 MAX"] = "Radiant Recovery MAX",
         ["신성한 기운"] = "Divine Aura",
+        ["고결한 기운"] = "Noble Aura",
         ["치유의 기운"] = "Healing Aura",
         ["속박"] = "Root",
         ["구원"] = "Salvation",
