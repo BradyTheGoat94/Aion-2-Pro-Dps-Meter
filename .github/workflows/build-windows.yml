@@ -27,11 +27,38 @@ jobs:
       - name: Apply build fixes
         shell: pwsh
         run: |
-          $replay = "src/Protocol/ReplayRecorder.cs"
-          $text = Get-Content $replay -Raw
-          if ($text -notmatch 'using System.IO;') {
-            Set-Content $replay ("using System.IO;" + [Environment]::NewLine + $text)
+          $ioFiles = @(
+            "src/Protocol/ReplayRecorder.cs",
+            "src/Protocol/ProtocolProfile.cs",
+            "src/Storage/FightStore.cs"
+          )
+          foreach ($file in $ioFiles) {
+            $text = Get-Content $file -Raw
+            if ($text -notmatch 'using System.IO;') {
+              Set-Content $file ("using System.IO;" + [Environment]::NewLine + $text)
+            }
           }
+
+          $files = @(
+            "src/Protocol/TcpStreamReassembler.cs",
+            "src/Protocol/StreamFramer.cs",
+            "src/Protocol/CurrentClientDecoder.cs",
+            "src/Protocol/PacketDispatcher.cs"
+          )
+          foreach ($file in $files) {
+            $text = Get-Content $file -Raw
+            $text = $text.Replace("ReadOnlySpan<byte> payload", "byte[] payload")
+            $text = $text.Replace("ReadOnlySpan<byte> bytes", "byte[] bytes")
+            $text = $text.Replace("ReadOnlySpan<byte> frame", "byte[] frame")
+            Set-Content $file $text
+          }
+
+          $dispatcher = "src/Protocol/PacketDispatcher.cs"
+          $text = Get-Content $dispatcher -Raw
+          $text = $text.Replace('return new(CombatKind.Damage, actor, $"Actor {actor}", target, $"Target {target}",', 'return new(CombatKind.Damage, checked((long)actor), $"Actor {actor}", checked((long)target), $"Target {target}",')
+          $text = $text.Replace('return new(damage>0?CombatKind.Damage:CombatKind.Heal, actor,$"Actor {actor}",target,$"Target {target}",', 'return new(damage>0?CombatKind.Damage:CombatKind.Heal, checked((long)actor),$"Actor {actor}",checked((long)target),$"Target {target}",')
+          $text = $text.Replace('return new(CombatKind.TargetHp,0,"",entity,$"Target {entity}","",0,DamageType.Unknown', 'return new(CombatKind.TargetHp,0,"",checked((long)entity),$"Target {entity}","",0,DamageType.Unknown')
+          Set-Content $dispatcher $text
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
