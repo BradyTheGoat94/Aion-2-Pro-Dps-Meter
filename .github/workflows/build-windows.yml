@@ -1272,6 +1272,97 @@ jobs:
             throw "Retroactive identity UI patch failed"
           }
 
+      - name: Trace combat-to-identity ID bridge encodings
+        shell: pwsh
+        run: |
+          $p = "src/Protocol/PacketDispatcher.cs"
+          $s = Get-Content $p -Raw
+
+          # Keep a bounded set of entity IDs that actually appeared in combat.
+          # Identity/lifecycle packets are then scanned for those exact IDs in
+          # several common wire encodings. This is diagnostic only: no guessed
+          # name is promoted to the UI from these matches.
+          if ($s -notmatch 'recentCombatEntityIds') {
+            $fieldAnchor = 'private readonly Dictionary<long, PlayerIdentity> identities = new();'
+            if (-not $s.Contains($fieldAnchor)) { throw "Identity dictionary anchor missing" }
+            $s = $s.Replace($fieldAnchor, $fieldAnchor + [Environment]::NewLine +
+              '    private readonly HashSet<long> recentCombatEntityIds = new();')
+          }
+
+          if ($s -notmatch 'RememberCombatEntity') {
+            $helperLines = @(
+              '    private void RememberCombatEntity(ulong id)',
+              '    {',
+              '        if (id == 0 || id > 500000) return;',
+              '        recentCombatEntityIds.Add((long)id);',
+              '        if (recentCombatEntityIds.Count > 128)',
+              '            recentCombatEntityIds.Remove(recentCombatEntityIds.First());',
+              '    }',
+              '',
+              '    private string FindCombatIdEncodings(ReadOnlySpan<byte> d)',
+              '    {',
+              '        var hits = new List<string>();',
+              '        foreach (var id in recentCombatEntityIds)',
+              '        {',
+              '            ulong u = (ulong)id;',
+              '            for (int i = 0; i < d.Length; i++)',
+              '            {',
+              '                int q = i;',
+              '                if (ReadV(d, ref q, out var vv) && vv == u)',
+              '                    hits.Add($"{id}:varint@{i}");',
+              '                if (i + 2 <= d.Length && (ulong)(d[i] | (d[i+1] << 8)) == u)',
+              '                    hits.Add($"{id}:le16@{i}");',
+              '                if (i + 3 <= d.Length && (ulong)(d[i] | (d[i+1] << 8) | (d[i+2] << 16)) == u)',
+              '                    hits.Add($"{id}:le24@{i}");',
+              '                if (i + 4 <= d.Length)',
+              '                {',
+              '                    uint le32 = (uint)(d[i] | (d[i+1] << 8) | (d[i+2] << 16) | (d[i+3] << 24));',
+              '                    if (le32 == u) hits.Add($"{id}:le32@{i}");',
+              '                }',
+              '                if (hits.Count >= 48) return string.Join(",", hits.Distinct());',
+              '            }',
+              '        }',
+              '        return string.Join(",", hits.Distinct());',
+              '    }',
+              ''
+            )
+            $helper = $helperLines -join [Environment]::NewLine
+            $anchor = '    private static bool ReadV('
+            if (-not $s.Contains($anchor)) { throw "ReadV anchor missing for combat-ID bridge helper" }
+            $s = $s.Replace($anchor, $helper + [Environment]::NewLine + $anchor)
+          }
+
+          # Record both source and target IDs as soon as validated damage/DoT is parsed.
+          $damageAnchor = 'var dtype = DecodeType((byte)damageType, flagByte);'
+          if ($s.Contains($damageAnchor) -and $s -notmatch 'RememberCombatEntity\(actor\);\s*RememberCombatEntity\(target\);') {
+            $s = $s.Replace($damageAnchor, 'RememberCombatEntity(actor);' + [Environment]::NewLine +
+              '        RememberCombatEntity(target);' + [Environment]::NewLine + '        ' + $damageAnchor)
+          }
+
+          $dotAnchor = 'uint skill=raw/100; if (skill==0) return null;'
+          if ($s.Contains($dotAnchor) -and $s -notmatch 'RememberCombatEntity\(actor\);\s*RememberCombatEntity\(target\);\s*uint skill=raw/100') {
+            $s = $s.Replace($dotAnchor, 'RememberCombatEntity(actor); RememberCombatEntity(target);' + [Environment]::NewLine +
+              '        ' + $dotAnchor)
+          }
+
+          # Append exact combat-ID representation matches to identity records.
+          $identityNeedle = '|bridgeStrings={DescribeBridgeStrings(d,start)}|raw='
+          $identityReplace = '|bridgeStrings={DescribeBridgeStrings(d,start)}|combatIdHits={FindCombatIdEncodings(d)}|raw='
+          if ($s.Contains($identityNeedle)) { $s = $s.Replace($identityNeedle, $identityReplace) }
+
+          # Append the same match scan to lifecycle bridge packets.
+          $bridgeNeedle = '|strings={strings}|raw={Convert.ToHexString(d)}'
+          $bridgeReplace = '|strings={strings}|combatIdHits={FindCombatIdEncodings(d)}|raw={Convert.ToHexString(d)}'
+          if ($s.Contains($bridgeNeedle)) { $s = $s.Replace($bridgeNeedle, $bridgeReplace) }
+
+          Set-Content $p $s
+          $verify = Get-Content $p -Raw
+          if ($verify -notmatch 'FindCombatIdEncodings' -or
+              $verify -notmatch 'combatIdHits=' -or
+              $verify -notmatch 'RememberCombatEntity') {
+            throw "Combat-to-identity bridge tracer verification failed"
+          }
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
