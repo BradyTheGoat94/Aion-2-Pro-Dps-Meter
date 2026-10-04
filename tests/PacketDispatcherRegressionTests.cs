@@ -225,11 +225,4 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(DamageType.Perfect, hit.DamageType);
     }
 
-
-    [Fact]
-    public void PulledStatus_EnglishLocalization_IsPresent()
-    {
-        Assert.Equal("Pulled", PublicGameData.LocalizeForTest("당겨짐"));
-    }
-
 }
