@@ -271,4 +271,21 @@ public sealed class PacketDispatcherRegressionTests
             x.Contains("tag=globalSessionLink|session=3920|global=304076", StringComparison.Ordinal));
     }
 
+
+    [Fact]
+    public void Embedded2036Bytes_DoNotCreateSessionIdentityLink()
+    {
+        // Exact 2026-10-04 live packet whose real opcode is 29 37.
+        // It merely contains 20 36 at offset 11; treating that byte sequence
+        // as a session link produced a false session=106/global=2638549284.
+        const string hex = "2429379A3A03032FCB9CC7203604C86A7C0F472A2411459DC31B43E8611244B702";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var records = new List<string>();
+        dispatcher.ValidationRecord += records.Add;
+
+        _ = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        Assert.DoesNotContain(records, x => x.Contains("tag=globalSessionLink", StringComparison.Ordinal));
+    }
+
 }

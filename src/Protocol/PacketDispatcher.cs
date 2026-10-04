@@ -90,12 +90,16 @@ public sealed class PacketDispatcher
         TraceGlobalSessionCandidates(frame, utc);
         TraceCombatIdentityCandidates(frame, utc);
 
-        // Identity/session evidence must be observed even on packet families that
-        // are not part of the combat profile. A live Global 20 36 packet links
-        // short-lived combat/session IDs to stable character IDs.
-        var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);
-        if (embeddedLink is not null)
-            yield return embeddedLink;
+        // Only accept 20 36 when it is the frame's actual opcode immediately
+        // after the leading varint. Fresh captures contain incidental 20 36 byte
+        // sequences inside unrelated packets, which must never create ID links.
+        if (a == 0x20 && b == 0x36)
+        {
+            var sessionLink = TryGlobalSessionLink(frame, p, utc);
+            if (sessionLink is not null)
+                yield return sessionLink;
+            yield break;
+        }
 
         var embeddedIdentity = TryEmbeddedIdentity(frame, utc);
         if (embeddedIdentity is not null)
@@ -953,14 +957,6 @@ public sealed class PacketDispatcher
         identities[session] = known;
         ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={known.Name}|class={known.ClassName}");
         return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0);
-    }
-
-    private Aion2Decoded? TryEmbeddedGlobalSessionLink(ReadOnlySpan<byte> d, DateTime utc)
-    {
-        for (int i = 0; i + 2 < d.Length; i++)
-            if (d[i] == 0x20 && d[i + 1] == 0x36)
-                return TryGlobalSessionLink(d, i, utc);
-        return null;
     }
 
     private void TraceCombatIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
