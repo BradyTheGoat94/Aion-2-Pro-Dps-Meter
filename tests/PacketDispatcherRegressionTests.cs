@@ -206,4 +206,20 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(DamageType.Direct, hit.DamageType);
     }
 
+
+    [Fact]
+    public void PulledStatus_LiveCapture_LocalizesToEnglish()
+    {
+        // Exact 2026-10-04 live packet. Public game data identifies 당겨짐
+        // as the pulled status/effect used by pull mechanics.
+        const string hex = "250438CD8B010600858701D7860100070204000207AC980001000000F252C5070100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal("Pulled", hit.Skill);
+        Assert.Equal(965, hit.Amount);
+        Assert.Equal(DamageType.Perfect, hit.DamageType);
+    }
+
 }
