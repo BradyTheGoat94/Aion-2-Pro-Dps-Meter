@@ -366,4 +366,39 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(982, row.Damage);
     }
 
+
+    [Fact]
+    public void GlobalSessionLink_CarriesTrustedSelfIdentityAcrossSessionChange()
+    {
+        // Exact live prefixes from two captures:
+        // 1) session 3920 -> stable/global 304076
+        // 2) self-info identifies session 3920 as Bradyboi
+        // 3) after a transition, session 9640 -> the same stable/global 304076
+        const string firstLink = "CF0B20360000D01E00000000CCA3040000003608A602CC08E615";
+        const string selfInfo = "D9103336D01E5F91C12837084272616479626F6936080B00000002";
+        const string nextLink = "CF0B20360000A84B00000000CCA3040000003608E55DCC08E8150000789C";
+
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var records = new List<string>();
+        dispatcher.ValidationRecord += records.Add;
+
+        _ = dispatcher.Dispatch(Convert.FromHexString(firstLink), DateTime.UnixEpoch).ToList();
+        var selfEvents = dispatcher.Dispatch(Convert.FromHexString(selfInfo), DateTime.UnixEpoch.AddSeconds(1)).ToList();
+        var nextEvents = dispatcher.Dispatch(Convert.FromHexString(nextLink), DateTime.UnixEpoch.AddSeconds(2)).ToList();
+
+        var self = Assert.Single(selfEvents, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(3920, self.SourceId);
+        Assert.Equal("Bradyboi", self.Source);
+
+        var remapped = Assert.Single(nextEvents, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(9640, remapped.SourceId);
+        Assert.Equal("Bradyboi", remapped.Source);
+        Assert.Equal("Templar", remapped.SourceClass);
+
+        Assert.Contains(records, x =>
+            x.Contains("tag=sessionPromotedGlobal|session=3920|global=304076|name=Bradyboi", StringComparison.Ordinal));
+        Assert.Contains(records, x =>
+            x.Contains("tag=globalSessionName|session=9640|global=304076|name=Bradyboi", StringComparison.Ordinal));
+    }
+
 }
