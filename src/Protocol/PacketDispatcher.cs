@@ -186,6 +186,7 @@ public sealed class PacketDispatcher
         var skillName = SkillName(checked((int)skill));
         int postSkillPos = p;
         if (!ReadV(d, ref p, out var damageType)) return null;
+        int recoveryStart = p;
 
         int[] trailing={0,0,0,0,8,12,10,14};
         byte mods=0, direction=0; int canonicalSpecialBytes=0;
@@ -222,7 +223,7 @@ public sealed class PacketDispatcher
         // 9,201 by reading a later 12039 -> 9201 metadata pair).
         if (damage <= 5)
         {
-            if (TryRecoverAlternateDamage(d, checked((int)skill), damageOrdinalPos, out var recoveredDamage))
+            if (TryRecoverAlternateDamage(d, checked((int)skill), recoveryStart, damageOrdinalPos, out var recoveredDamage))
                 damage = recoveredDamage;
         }
 
@@ -671,16 +672,17 @@ public sealed class PacketDispatcher
         return string.Join(",", parts);
     }
 
-    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, int ordinalPos, out ulong damage)
+    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, int recoveryStart, int ordinalPos, out ulong damage)
     {
         damage = 0;
-        if (ordinalPos <= 0 || ordinalPos > d.Length) return false;
+        if (recoveryStart < 0 || ordinalPos <= recoveryStart || ordinalPos > d.Length) return false;
 
-        // Bound recovery to at most 18 bytes BEFORE the tiny generic damage
-        // ordinal. This preserves every verified alternate layout, including
-        // the category-6 Parry packet (11125 -> 62), while excluding metadata
-        // that follows the ordinal.
-        int start = Math.Max(0, ordinalPos - 18);
+        // Restrict recovery to the decoded damage-layout region: after the
+        // skill/damage-type header and before the tiny generic damage ordinal.
+        // This preserves verified alternate layouts (including 11125 -> 62
+        // Parry) while excluding both skill-ID bytes before the region and
+        // unrelated effect metadata after the ordinal.
+        int start = Math.Max(recoveryStart, ordinalPos - 18);
         ulong firstHit = 0;
         ulong lastHit = 0;
         bool found = false;
