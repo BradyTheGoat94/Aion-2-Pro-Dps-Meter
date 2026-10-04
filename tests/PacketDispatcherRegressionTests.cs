@@ -557,4 +557,134 @@ public sealed class PacketDispatcherRegressionTests
         Assert.True((hit.DamageFlags & DamageFlags.Frontal) != 0);
     }
 
+
+    [Fact]
+    public void CombatEngine_ControlledMultiplayer_OnlyConfirmedPlayersCount()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        var confirmed = new[]
+        {
+            (Id: 101L, Name: "Alpha", Class: "Templar", Damage: 1000L),
+            (Id: 102L, Name: "Bravo", Class: "Ranger", Damage: 2000L),
+            (Id: 103L, Name: "Charlie", Class: "Sorcerer", Damage: 3000L),
+            (Id: 104L, Name: "Delta", Class: "Cleric", Damage: 4000L)
+        };
+
+        foreach (var player in confirmed)
+        {
+            engine.Apply(new CombatEvent(
+                Utc: now, Kind: CombatKind.PlayerName,
+                SourceId: player.Id, Source: player.Name, SourceClass: player.Class));
+            engine.Apply(new CombatEvent(
+                Utc: now, Kind: CombatKind.Damage,
+                SourceId: player.Id, Source: player.Name, SourceClass: player.Class,
+                TargetId: 900, Target: "Training Target",
+                Skill: "Controlled hit", Amount: player.Damage));
+        }
+
+        // Unknown combat remains captured but must not inflate player DPS.
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 105, Source: "Actor 105", SourceClass: "Ranger",
+            TargetId: 900, Target: "Training Target",
+            Skill: "Unresolved hit", Amount: 5000));
+
+        // Confirmed NPC damage must never become a player row.
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 901, Source: "Training Add", SourceClass: "NPC",
+            TargetId: 101, Target: "Alpha",
+            Skill: "NPC hit", Amount: 500));
+
+        var damage = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        Assert.Equal(4, damage.Players.Count);
+        Assert.Equal(10000, damage.FightDamage);
+        Assert.Equal(10000, damage.Players.Sum(x => x.Damage));
+        Assert.DoesNotContain(damage.Players, x => x.EntityId == 105 || x.EntityId == 901);
+
+        var taken = engine.Snapshot(MeterSegment.Current, MeterCategory.DamageTaken);
+        Assert.Equal(10500, taken.Players.Sum(x => x.Damage));
+
+        // Late trusted identity promotes the already-captured unresolved 5000
+        // without replaying it or affecting NPC exclusion.
+        now = now.AddSeconds(1);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName,
+            SourceId: 105, Source: "Echo", SourceClass: "Ranger"));
+
+        var promoted = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        Assert.Equal(5, promoted.Players.Count);
+        Assert.Equal(15000, promoted.FightDamage);
+        var echo = Assert.Single(promoted.Players, x => x.Name == "Echo");
+        Assert.Equal(5000, echo.Damage);
+    }
+
+    [Fact]
+    public void CombatEngine_BackToBackFights_KeepCurrentPreviousOverallSeparate()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName,
+            SourceId: 77, Source: "Tester", SourceClass: "Templar"));
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 77, Source: "Tester", SourceClass: "Templar",
+            TargetId: 900, Target: "First Target", Skill: "Strike", Amount: 1000));
+
+        now = now.AddSeconds(8);
+        Assert.False(engine.Snapshot().InFight);
+        Assert.Single(engine.History);
+
+        now = now.AddSeconds(1);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 77, Source: "Tester", SourceClass: "Templar",
+            TargetId: 901, Target: "Second Target", Skill: "Strike", Amount: 2000,
+            SourceIdentityConfirmed: true));
+
+        var current = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        var previous = engine.Snapshot(MeterSegment.Previous, MeterCategory.Damage);
+        var overall = engine.Snapshot(MeterSegment.Overall, MeterCategory.Damage);
+
+        Assert.Equal(2000, current.FightDamage);
+        Assert.Equal(1000, previous.FightDamage);
+        Assert.Equal(3000, overall.FightDamage);
+        Assert.Equal(2, engine.History.Count + (current.InFight ? 1 : 0));
+    }
+
+    [Fact]
+    public void CombatEngine_ZoneAndCombatEnd_CloseEncounterImmediately()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName,
+            SourceId: 77, Source: "Tester", SourceClass: "Templar"));
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 77, Source: "Tester", SourceClass: "Templar",
+            TargetId: 900, Target: "Target", Skill: "Strike", Amount: 1000));
+
+        engine.Apply(new CombatEvent(Utc: now.AddSeconds(2), Kind: CombatKind.Zone));
+        Assert.False(engine.Snapshot().InFight);
+        Assert.Equal("Zone changed", Assert.Single(engine.History).EndReason);
+
+        now = now.AddSeconds(3);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName,
+            SourceId: 88, Source: "Tester2", SourceClass: "Ranger"));
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 88, Source: "Tester2", SourceClass: "Ranger",
+            TargetId: 901, Target: "Target2", Skill: "Shot", Amount: 2000));
+        engine.Apply(new CombatEvent(Utc: now.AddSeconds(1), Kind: CombatKind.CombatEnd));
+
+        Assert.False(engine.Snapshot().InFight);
+        Assert.Equal(2, engine.History.Count);
+        Assert.Equal("Combat ended", engine.History[^1].EndReason);
+    }
+
 }
