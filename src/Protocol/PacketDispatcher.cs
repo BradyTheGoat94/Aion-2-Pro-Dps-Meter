@@ -167,15 +167,27 @@ public sealed class PacketDispatcher
         if (!ReadV(d, ref p, out var damageType)) return null;
 
         int[] trailing={0,0,0,0,8,12,10,14};
-        byte mods=0, direction=0; int consumedSpecial=0;
-        if (category >= 5 && p + 2 < d.Length && d[p + 1] == 0)
+        byte mods=0, direction=0; int canonicalSpecialBytes=0;
+        if (category >= 5 && p + 2 < d.Length)
         {
-            mods = d[p];
-            direction = d[p + 2];
-            p += 3;
-            consumedSpecial = 3;
+            // Current category-6 packets encode: raw modifier byte, an auxiliary
+            // varint, then a one-byte direction. Most captures have aux=0, but
+            // live packets also use multi-byte aux values (e.g. 144). The old
+            // fixed [mods,00,direction] check then missed the direction and read
+            // the stable 10000 base value as damage.
+            int auxPos=p+1;
+            if (ReadV(d,ref auxPos,out var aux) && aux<=4096 && auxPos<d.Length && d[auxPos]<=2)
+            {
+                mods=d[p];
+                direction=d[auxPos];
+                p=auxPos+1;
+                // trailing was calibrated for the canonical 3-byte special
+                // header. Subtract 3, not the encoded byte length, so a longer
+                // aux varint advances the real damage field by the same amount.
+                canonicalSpecialBytes=3;
+            }
         }
-        int trailer=trailing[category]-consumedSpecial; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
+        int trailer=trailing[category]-canonicalSpecialBytes; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;
