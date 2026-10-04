@@ -2077,8 +2077,18 @@ internal static class PublicGameData
         // Aion2Flow public en-US resource pack (format v14), exact ID lookups.
         // These are deliberately exact-ID overrides so the meter stays useful
         // offline without inventing names from class/skill-family heuristics.
+        [3000017] = "Theostone: Zikel's Vestige",
         [3000020] = "Theostone: Aultross's Promise",
         [3000021] = "Theostone: Bargott's Ember",
+
+        // Monster 2026-10-04 multiplayer/boss capture. Exact IDs decoded from
+        // Aion2Flow's public en-US format-v14 SkillNames section.
+        [1230115] = "Attack",
+        [1230125] = "Rush",
+        [1607630] = "Attack",
+        [1607660] = "Attack",
+        [1607670] = "Attack",
+        [1607740] = "Attack",
 
         // Current 2026-10-04 live capture: every one of these exact IDs is
         // published as "Attack" in Aion2Flow's en-US SkillNames section.

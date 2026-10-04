@@ -151,7 +151,16 @@ public sealed class PacketDispatcher
             return null;
         }
         if(confirmedSummons.Contains(id) || summonOwners.ContainsKey(id)) {
-            Diagnostic?.Invoke(new(DateTime.UtcNow,"summon-owner","Retained confirmed summon ownership across entity removal",frame.Length));
+            Diagnostic?.Invoke(new(utc,"summon-owner","Retained confirmed summon ownership across entity removal",frame.Length));
+            recentCombatIds.Remove(id);recentCombatEntityIds.Remove(id);
+            return null;
+        }
+        if(mobs.ContainsKey(id)) {
+            // 2026-10-04 Furious Feruk capture: 00 8D reported the named boss
+            // at 1,195,544 / 1,200,000 HP, then 21 8D removed the entity, but
+            // the same entity continued attacking for minutes. This is another
+            // visibility removal, not proof that a known NPC generation ended.
+            Diagnostic?.Invoke(new(utc,"mob-identity","Retained known mob identity across entity removal",frame.Length));
             recentCombatIds.Remove(id);recentCombatEntityIds.Remove(id);
             return null;
         }
@@ -712,6 +721,9 @@ public sealed class PacketDispatcher
         // entity id was previously retained as a summon across visibility removal.
         summonOwners.Remove(globalId);
         confirmedSummons.Remove(globalId);
+        // If an entity id is later proven to be a player, any mob identity
+        // retained across a visibility-removal cycle belongs to an older generation.
+        mobs.Remove(globalId);
         if (unresolvedSummonCandidates.Remove(globalId, out var unresolved))
             ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonLifecycle|actor={globalId}|event=trustedPlayerIdentity|hits={unresolved.Hits}|name={name}|source={source}");
         var resolvedClass = className;
