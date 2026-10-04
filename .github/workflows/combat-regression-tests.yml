@@ -17,9 +17,9 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Restore xUnit regression tests
         run: dotnet restore tests/Aion2DPSPro.Tests.csproj
-      - name: Restore legacy regression runner
-        run: dotnet restore tests/Regression.csproj
       - name: Run xUnit combat regression tests
         run: dotnet test tests/Aion2DPSPro.Tests.csproj --configuration Release --no-restore --verbosity normal
+      - name: Restore legacy regression runner
+        run: dotnet restore tests/Regression.csproj
       - name: Run legacy combat regression runner
         run: dotnet run --project tests/Regression.csproj --configuration Release --no-restore
