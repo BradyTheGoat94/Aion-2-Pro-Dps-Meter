@@ -401,4 +401,20 @@ public sealed class PacketDispatcherRegressionTests
             x.Contains("tag=globalSessionName|session=9640|global=304076|name=Bradyboi", StringComparison.Ordinal));
     }
 
+
+    [Fact]
+    public void OtherInfo_TwoCharacterName_IsAccepted()
+    {
+        // Exact prefix from the 2026-10-04 live capture:
+        // 45 36, entity 1150, current name marker, "Qi", job code 36.
+        const string hex = "E60B4536FE080120A0010702516924";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var identity = Assert.Single(events, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(1150, identity.SourceId);
+        Assert.Equal("Qi", identity.Source);
+        Assert.Equal("Chanter", identity.SourceClass);
+    }
+
 }
