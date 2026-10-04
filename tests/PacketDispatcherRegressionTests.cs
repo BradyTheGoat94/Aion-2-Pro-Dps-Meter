@@ -137,6 +137,9 @@ public sealed class PacketDispatcherRegressionTests
         var engine = new CombatEngine(() => now);
 
         engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName, SourceId: 77,
+            Source: "Tester", SourceClass: "Templar"));
+        engine.Apply(new CombatEvent(
             Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
             TargetId: 900, Target: "Training Target", Skill: "Strike",
             Amount: 8000, DamageType: DamageType.Direct));
@@ -163,6 +166,9 @@ public sealed class PacketDispatcherRegressionTests
         var now = DateTime.UnixEpoch;
         var engine = new CombatEngine(() => now);
 
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName, SourceId: 77,
+            Source: "Tester", SourceClass: "Templar"));
         engine.Apply(new CombatEvent(
             Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
             TargetId: 901, Target: "Boss", Skill: "Strike", Amount: 4000,
@@ -415,6 +421,38 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(1150, identity.SourceId);
         Assert.Equal("Qi", identity.Source);
         Assert.Equal("Chanter", identity.SourceClass);
+    }
+
+
+    [Fact]
+    public void CombatEngine_UnresolvedDamage_AppearsAfterConfirmedIdentity()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        // Mirrors the live 9368 sequence: combat arrives first, then the real
+        // player identity is learned a few seconds later.
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 9368, Source: "Actor 9368", SourceClass: "Ranger",
+            TargetId: 82342, Target: "Target 82342", Skill: "Rapid Fire",
+            Amount: 480, DamageType: DamageType.Direct));
+
+        var unresolved = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        Assert.Empty(unresolved.Players);
+        Assert.Equal(0, unresolved.FightDamage);
+
+        now = now.AddSeconds(2);
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName,
+            SourceId: 9368, Source: "ExxSoldier", SourceClass: "Ranger"));
+
+        var resolved = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        var row = Assert.Single(resolved.Players);
+        Assert.Equal("ExxSoldier", row.Name);
+        Assert.Equal("Ranger", row.ClassName);
+        Assert.Equal(480, row.Damage);
+        Assert.Equal(480, resolved.FightDamage);
     }
 
 }
