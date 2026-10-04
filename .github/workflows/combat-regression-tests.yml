@@ -15,7 +15,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Restore regression tests
+      - name: Restore xUnit regression tests
         run: dotnet restore tests/Aion2DPSPro.Tests.csproj
-      - name: Run combat regression tests
+      - name: Restore legacy regression runner
+        run: dotnet restore tests/Regression.csproj
+      - name: Run xUnit combat regression tests
         run: dotnet test tests/Aion2DPSPro.Tests.csproj --configuration Release --no-restore --verbosity normal
+      - name: Run legacy combat regression runner
+        run: dotnet run --project tests/Regression.csproj --configuration Release --no-restore
