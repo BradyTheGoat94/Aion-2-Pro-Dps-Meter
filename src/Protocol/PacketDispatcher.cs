@@ -138,10 +138,17 @@ public sealed class PacketDispatcher
     {
         if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
         long id=(long)value;
-        // Captures show this removal for named players who continue attacking.
-        // Do not treat this unverified visibility packet as proof of player ID reuse.
+        // Captures show this removal for named players and confirmed summons
+        // that continue participating seconds later. Treat it as a visibility
+        // removal, not proof that the entity generation ended. A later spawn
+        // or trusted player identity for the same id will reset stale summon state.
         if(id==selfEntityId || identities.ContainsKey(id)) {
             Diagnostic?.Invoke(new(DateTime.UtcNow,"identity-map","Retained known player identity across entity removal",frame.Length));
+            return null;
+        }
+        if(confirmedSummons.Contains(id) || summonOwners.ContainsKey(id)) {
+            Diagnostic?.Invoke(new(DateTime.UtcNow,"summon-owner","Retained confirmed summon ownership across entity removal",frame.Length));
+            recentCombatIds.Remove(id);recentCombatEntityIds.Remove(id);
             return null;
         }
         identities.Remove(id);globalPlayerNames.Remove(id);partyIdentities.Remove(id);sessionToGlobal.Remove(id);
@@ -282,9 +289,15 @@ public sealed class PacketDispatcher
         if (q >= d.Length) return;
 
         // Current 41 36 spawn mask: low byte is entity kind. 0x5F is a summon/pet.
-        // Do not treat ordinary NPCs or transient skill-effect entities as summons.
+        // A new non-summon generation for the same entity id invalidates any
+        // retained summon owner from an earlier visibility cycle.
         byte kind = d[q];
-        if (kind != 0x5F) return;
+        if (kind != 0x5F)
+        {
+            summonOwners.Remove(summonId);
+            confirmedSummons.Remove(summonId);
+            return;
+        }
         confirmedSummons.Add(summonId);
         ValidationRecord?.Invoke($"{utc:O}|tag=summonSpawn|summon={summonId}|kind=0x{kind:X2}");
 
@@ -534,6 +547,7 @@ public sealed class PacketDispatcher
         // when a plausible stable/base value is immediately followed by a
         // plausible hit, but scan enough of the tail to include that pair.
         int start = Math.Max(0, d.Length - 18);
+        bool found = false;
         for (int i = start; i < d.Length; i++)
         {
             int p = i;
@@ -541,10 +555,14 @@ public sealed class PacketDispatcher
             if (first < 5_000 || first > 50_000) continue;
             if (!ReadV(d, ref p, out var hit)) continue;
             if (hit < 20 || hit > 5_000_000) continue;
+
+            // Prefer the final validated base -> hit pair in the tail. The
+            // 2026-10-04 short Corrode packet contains an earlier 7023 -> 12743
+            // metadata pair and the authoritative later 12280 -> 1626 pair.
             damage = hit;
-            return true;
+            found = true;
         }
-        return false;
+        return found;
     }
 
     private sealed record PlayerIdentity(string Name, string ClassName);
@@ -556,6 +574,10 @@ public sealed class PacketDispatcher
     private void RememberGlobalPlayerIdentity(long globalId, string name, string className, DateTime utc, string source)
     {
         if (globalId <= 0 || string.IsNullOrWhiteSpace(name)) return;
+        // A trusted player identity begins a new non-summon generation if an
+        // entity id was previously retained as a summon across visibility removal.
+        summonOwners.Remove(globalId);
+        confirmedSummons.Remove(globalId);
         var resolvedClass = className;
         if (resolvedClass == "Unknown" && identities.TryGetValue(globalId, out var existing))
             resolvedClass = existing.ClassName;
