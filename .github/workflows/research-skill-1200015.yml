@@ -1,0 +1,66 @@
+name: Research skill 1200015 base projection
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public Aion2Flow data
+        run: git clone --depth 1 https://github.com/cloris-chan/Aion2Flow.git /tmp/Aion2Flow
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install LZ4
+        run: python -m pip install lz4
+      - name: Decode base projection and English name
+        shell: bash
+        run: |
+          python - <<'PY'
+          import struct
+          from pathlib import Path
+          import lz4.block
+
+          def decode(path, kind):
+              data=Path(path).read_bytes()
+              pm,v,k,r,u,cs,cl=struct.unpack_from('<IHBBiQi',data,0)
+              assert (pm,v,k)==(0x50523241,14,kind)
+              payload=lz4.block.decompress(data[24:24+cl],uncompressed_size=u)
+              assert struct.unpack_from('<IH',payload,0)==(0x44523241,14)
+              sc=struct.unpack_from('<i',payload,6)[0]
+              pos=10; headers=[]
+              for _ in range(sc):
+                  sid,count,length,checksum=struct.unpack_from('<HiiQ',payload,pos); pos+=18
+                  headers.append((sid,count,length))
+              out={}; data_pos=pos
+              for sid,count,length in headers:
+                  out[sid]=(count,payload[data_pos:data_pos+length]); data_pos+=length
+              return out
+
+          shared=decode('/tmp/Aion2Flow/src/Aion2Flow.Resources/Packs/shared.bin',1)
+          count,sec=shared[2]
+          base=None
+          p=0
+          for _ in range(count):
+              skill,projection=struct.unpack_from('<ii',sec,p); p+=8
+              if skill==1200015:
+                  base=projection
+                  break
+          print(f'AION2FLOW_BASE|1200015|{base}')
+
+          locale=decode('/tmp/Aion2Flow/src/Aion2Flow.Resources/Packs/en-US.bin',2)
+          count,sec=locale[101]
+          names={}
+          p=0
+          wanted={1200015}
+          if base is not None: wanted.add(base)
+          for _ in range(count):
+              skill,n=struct.unpack_from('<ii',sec,p); p+=8
+              enc=sec[p:p+n]; p+=n
+              if skill in wanted:
+                  names[skill]=bytes(b^0x22 for b in enc).decode('utf-8')
+          for skill in sorted(wanted):
+              print(f'AION2FLOW_NAME|{skill}|{names.get(skill,"<MISSING>")}')
+          PY
