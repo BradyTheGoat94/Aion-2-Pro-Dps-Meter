@@ -22,7 +22,8 @@ public sealed class PacketDispatcherRegressionTests
         new Dictionary<string, PacketTag>
         {
             ["damage"] = new PacketTag(0x04, 0x38),
-            ["mobSpawn"] = new PacketTag(0x41, 0x36)
+            ["mobSpawn"] = new PacketTag(0x41, 0x36),
+            ["entityRemoved"] = new PacketTag(0x21, 0x8D)
         },
         false);
 
@@ -706,6 +707,48 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(454, hit.Amount);
         Assert.Equal(DamageType.Frontal, hit.DamageType);
         Assert.Equal("Theostone: Aultross's Promise", hit.Skill);
+    }
+
+
+    [Fact]
+    public void Damage_ShortCorrode_UsesFinalValidatedBaseHitPair()
+    {
+        // Exact 2026-10-04 live packet. The early 7023 -> 12743 pair is
+        // metadata; neighboring Corrode packets keep 12743 stable while their
+        // actual hit varies. The authoritative tail pair is 12280 -> 1626.
+        const string hex = "210438FDE1040400B54DA16EFF00E702EF36C76301000000F85FDA0C0100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(9909, hit.SourceId);
+        Assert.Equal(78077, hit.TargetId);
+        Assert.Equal(1626, hit.Amount);
+    }
+
+    [Fact]
+    public void ConfirmedSummon_OwnershipSurvivesVisibilityRemoval()
+    {
+        // State setup mirrors the live 85917 -> 9909 parent-key relationship.
+        // The removal and subsequent damage packets below are exact capture bytes.
+        const string spawn = "1F41369D9F055F00000000B52600000F00000000003508085461727461727573";
+        const string removed = "0B218D9D9F050000";
+        const string damage = "220438EDFD0204009D9F05B4D1F50005022FE9056001000000F85FA6340100";
+
+        var dispatcher = new PacketDispatcher(DamageAndMobProfile());
+        var records = new List<string>();
+        dispatcher.ValidationRecord += records.Add;
+
+        _ = dispatcher.Dispatch(Convert.FromHexString(spawn), DateTime.UnixEpoch).ToList();
+        _ = dispatcher.Dispatch(Convert.FromHexString(removed), DateTime.UnixEpoch.AddSeconds(1)).ToList();
+        var events = dispatcher.Dispatch(Convert.FromHexString(damage), DateTime.UnixEpoch.AddSeconds(9)).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(9909, hit.SourceId);
+        Assert.Equal(48877, hit.TargetId);
+        Assert.Equal(6694, hit.Amount);
+        Assert.Contains(records, x =>
+            x.Contains("tag=summonDamage|summon=85917|owner=9909", StringComparison.Ordinal));
     }
 
 }
