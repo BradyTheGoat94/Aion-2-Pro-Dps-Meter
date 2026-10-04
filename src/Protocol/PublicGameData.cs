@@ -2078,8 +2078,6 @@ internal static class PublicGameData
         if (EnglishNames.TryGetValue(name, out var english)) return english;
         return name;
     }
-
-    internal static string LocalizeForTest(string name) => LocalizeEnglish(name);
     public static string SkillName(int raw)
     {
         EnsureLoaded();
