@@ -225,4 +225,19 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal(DamageType.Perfect, hit.DamageType);
     }
 
+
+    [Fact]
+    public void OtherInfo_CurrentNameMarker_ResolvesPlayerIdentity()
+    {
+        // Exact prefix from the 2026-10-04 Global capture:
+        // 45 36, entity 7685, current 0x17 name marker, "Shinko".
+        const string hex = "B70C4536853C0120A00117065368696E6B6F";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var identity = Assert.Single(events, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(7685, identity.SourceId);
+        Assert.Equal("Shinko", identity.Source);
+    }
+
 }

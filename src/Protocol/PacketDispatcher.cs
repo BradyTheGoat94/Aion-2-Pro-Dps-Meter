@@ -50,11 +50,34 @@ public sealed class PacketDispatcher
             yield break;
         }
 
-var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
-        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
+// Trace identity evidence before rejecting unknown opcodes. Several lifecycle
+        // packets are intentionally not combat tags, but can carry the missing
+        // session/global relationship needed to resolve Actor #### rows.
+        // Current Global 45 36 user-info is identity data, not combat data.
+        // Parse it independently of profile verification/tags.
+        if (a == 0x45 && b == 0x36)
+        {
+            var identityEvt = ObserveIdentity(frame, p + 2, utc, "otherInfo");
+            if (identityEvt is not null)
+            {
+                Diagnostic?.Invoke(new(utc, "parse", "Parsed otherInfo identity", frame.Length));
+                ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet=otherInfo|id={identityEvt.SourceId}|name={identityEvt.Source}|raw={Convert.ToHexString(frame)}");
+                yield return identityEvt;
+            }
+            else
+            {
+                TraceIdentityLifecycle(frame, utc);
+                TraceCombatIdentityCandidates(frame, utc);
+            }
+            yield break;
+        }
 
         TraceIdentityLifecycle(frame, utc);
         TraceGlobalSessionCandidates(frame, utc);
+        TraceCombatIdentityCandidates(frame, utc);
+
+        var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
+        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
         var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);
         if (embeddedLink is not null)
             yield return embeddedLink;
@@ -647,7 +670,11 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         int end = Math.Min(d.Length - 2, start + 96);
         for (int i = Math.Max(0, start); i < end; i++)
         {
-            if (d[i] != 0x07) continue;
+            // Global's July 2026 nickname update changed the character-name
+            // marker observed in 45 36 user-info packets from 0x07 to 0x17.
+            // Accept both layouts; the following length/name validation remains
+            // identical and prevents arbitrary strings from becoming identities.
+            if (d[i] != 0x07 && d[i] != 0x17) continue;
             int len = d[i + 1];
             if (len < 3 || len > 24 || i + 2 + len > d.Length) continue;
             var bytes = d.Slice(i + 2, len);
@@ -900,6 +927,22 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             if (d[i] == 0x20 && d[i + 1] == 0x36)
                 return TryGlobalSessionLink(d, i, utc);
         return null;
+    }
+
+    private void TraceCombatIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
+    {
+        if (recentCombatEntityIds.Count == 0 || d.Length < 4) return;
+        var hits = FindCombatIdEncodings(d);
+        if (string.IsNullOrWhiteSpace(hits)) return;
+
+        int p = 0;
+        if (!ReadV(d, ref p, out _) || p + 1 >= d.Length) return;
+        byte a = d[p], b = d[p + 1];
+
+        // Damage and DOT packets already log explicit source/target IDs.
+        if ((a == 0x04 && b == 0x38) || (a == 0x05 && b == 0x38)) return;
+
+        ValidationRecord?.Invoke($"{utc:O}|tag=combatIdentityCandidate|opcode={a:X2}{b:X2}|combatIdHits={hits}|strings={DescribeBridgeStrings(d,0)}|frameLen={d.Length}|raw={Convert.ToHexString(d)}");
     }
 
     private void TraceIdentityLifecycle(ReadOnlySpan<byte> d, DateTime utc)
