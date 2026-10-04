@@ -53,6 +53,25 @@ public sealed class PacketDispatcher
 // Trace identity evidence before rejecting unknown opcodes. Several lifecycle
         // packets are intentionally not combat tags, but can carry the missing
         // session/global relationship needed to resolve Actor #### rows.
+        // Current Global 45 36 user-info is identity data, not combat data.
+        // Parse it independently of profile verification/tags.
+        if (a == 0x45 && b == 0x36)
+        {
+            var identityEvt = ObserveIdentity(frame, p + 2, utc, "otherInfo");
+            if (identityEvt is not null)
+            {
+                Diagnostic?.Invoke(new(utc, "parse", "Parsed otherInfo identity", frame.Length));
+                ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet=otherInfo|id={identityEvt.SourceId}|name={identityEvt.Source}|raw={Convert.ToHexString(frame)}");
+                yield return identityEvt;
+            }
+            else
+            {
+                TraceIdentityLifecycle(frame, utc);
+                TraceCombatIdentityCandidates(frame, utc);
+            }
+            yield break;
+        }
+
         TraceIdentityLifecycle(frame, utc);
         TraceGlobalSessionCandidates(frame, utc);
         TraceCombatIdentityCandidates(frame, utc);
