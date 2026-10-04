@@ -342,7 +342,7 @@ public sealed class PacketDispatcherRegressionTests
         var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
         Assert.Equal(81163, hit.SourceId);
         Assert.Equal("NPC", hit.SourceClass);
-        Assert.DoesNotStartWith("Actor ", hit.Source);
+        Assert.False(hit.Source.StartsWith("Actor ", StringComparison.Ordinal));
     }
 
     [Fact]
