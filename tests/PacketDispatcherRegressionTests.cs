@@ -17,6 +17,15 @@ public sealed class PacketDispatcherRegressionTests
         },
         false);
 
+    private static ProtocolProfile DamageAndMobProfile() => new(
+        "REGRESSION", "Global", "capture-2026-10-04", 13328,
+        new Dictionary<string, PacketTag>
+        {
+            ["damage"] = new PacketTag(0x04, 0x38),
+            ["mobSpawn"] = new PacketTag(0x41, 0x36)
+        },
+        false);
+
     [Fact]
     public void PunishmentMax_Frontal_LiveCapture_Decodes21357()
     {
@@ -286,6 +295,75 @@ public sealed class PacketDispatcherRegressionTests
         _ = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
 
         Assert.DoesNotContain(records, x => x.Contains("tag=globalSessionLink", StringComparison.Ordinal));
+    }
+
+
+    [Theory]
+    [InlineData("DE094536E83D05B0A00007064B61747469610C", 7912, "Kattia", "Templar")]
+    [InlineData("E60A4536FE091D30A0010707416E6E6162656C10", 1278, "Annabel", "Ranger")]
+    public void OtherInfo_CurrentGlobal_UsesPacketJobCodeForClass(
+        string hex, long entityId, string name, string expectedClass)
+    {
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var identity = Assert.Single(events, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(entityId, identity.SourceId);
+        Assert.Equal(name, identity.Source);
+        Assert.Equal(expectedClass, identity.SourceClass);
+    }
+
+    [Fact]
+    public void SelfInfo_CurrentGlobal_UsesStructuredJobMetadata()
+    {
+        // Exact live prefix: entity 3920, Bradyboi, server/meta 2102,
+        // job code 11, extra=2. Current job table maps 11 to Templar.
+        const string hex = "D9103336D01E5F91C12837084272616479626F6936080B00000002";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var identity = Assert.Single(events, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(3920, identity.SourceId);
+        Assert.Equal("Bradyboi", identity.Source);
+        Assert.Equal("Templar", identity.SourceClass);
+    }
+
+    [Fact]
+    public void KnownMobSource_DoesNotRemainActorPlaceholder()
+    {
+        // Exact 41 36 spawn + damage from the 2026-10-04 capture.
+        const string spawnHex = "A00141368BFA041F00004B8E2C004002095C9AC74BAF04C800ED0D47E6CD0A43B56201FA67FA67CD0E0000CD0E00000000000000000000000000003CB8010064000000F04902000100000000000000A08601000000000050A50500010201110181969800FFFFFFFFFFFFFFFF8075D52ABB0300008BFA040102095C9AC74BAF04C800ED0D47070206F52C000002CD00D0020000D0003B0100002D00000000";
+        const string damageHex = "220438DD9D0104008BFA048327E9000202376F135B010000009E55D6070100";
+
+        var dispatcher = new PacketDispatcher(DamageAndMobProfile());
+        _ = dispatcher.Dispatch(Convert.FromHexString(spawnHex), DateTime.UnixEpoch).ToList();
+        var events = dispatcher.Dispatch(Convert.FromHexString(damageHex), DateTime.UnixEpoch.AddSeconds(1)).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(81163, hit.SourceId);
+        Assert.Equal("NPC", hit.SourceClass);
+        Assert.False(hit.Source.StartsWith("Actor ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CombatEngine_NpcDamage_IsDamageTakenButNotPlayerDps()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 81163, Source: "Skill Entity", SourceClass: "NPC",
+            TargetId: 55, Target: "Player", Skill: "Bittercold Wind",
+            Amount: 982, DamageType: DamageType.Direct));
+
+        var outgoing = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        Assert.Empty(outgoing.Players);
+        Assert.Equal(0, outgoing.FightDamage);
+
+        var taken = engine.Snapshot(MeterSegment.Current, MeterCategory.DamageTaken);
+        var row = Assert.Single(taken.Players);
+        Assert.Equal(982, row.Damage);
     }
 
 }
