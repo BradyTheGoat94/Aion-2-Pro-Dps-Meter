@@ -53,6 +53,20 @@ public sealed class PacketDispatcher
 // Trace identity evidence before rejecting unknown opcodes. Several lifecycle
         // packets are intentionally not combat tags, but can carry the missing
         // session/global relationship needed to resolve Actor #### rows.
+        // Current Global 33 36 self-info is identity data too. Handle it
+        // before profile dispatch so the local player name is never gated by
+        // an unverified/missing opcode profile.
+        if (a == 0x33 && b == 0x36)
+        {
+            var selfEvt = ObserveSelfIdentity(frame, p + 2, utc);
+            if (selfEvt is not null)
+            {
+                Diagnostic?.Invoke(new(utc, "parse", "Parsed selfInfo identity", frame.Length));
+                yield return selfEvt;
+            }
+            yield break;
+        }
+
         // Current Global 45 36 user-info is identity data, not combat data.
         // Parse it independently of profile verification/tags.
         if (a == 0x45 && b == 0x36)
@@ -76,8 +90,9 @@ public sealed class PacketDispatcher
         TraceGlobalSessionCandidates(frame, utc);
         TraceCombatIdentityCandidates(frame, utc);
 
-        var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
-        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
+        // Identity/session evidence must be observed even on packet families that
+        // are not part of the combat profile. A live Global 20 36 packet links
+        // short-lived combat/session IDs to stable character IDs.
         var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);
         if (embeddedLink is not null)
             yield return embeddedLink;
@@ -85,6 +100,9 @@ public sealed class PacketDispatcher
         var embeddedIdentity = TryEmbeddedIdentity(frame, utc);
         if (embeddedIdentity is not null)
             yield return embeddedIdentity;
+
+        var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
+        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
 
         if (kind == "mobSpawn")
         {
@@ -759,7 +777,7 @@ public sealed class PacketDispatcher
         p += 4;
         int serverId = d[p] | (d[p+1] << 8);
         if (entityId <= 0 || entityId > int.MaxValue) return null;
-        string lookupClass = jobCode switch { 11 => "Gladiator", 12 => "Templar", 13 => "Assassin", 14 => "Ranger", 15 => "Sorcerer", 16 => "Spiritmaster", 17 => "Cleric", 18 => "Chanter", _ => "Unknown" };
+        string lookupClass = ClassFromJobCode(jobCode);
         RememberGlobalPlayerIdentity(entityId, name, lookupClass, utc, "charLookup");
         var combatHit = recentCombatEntityIds.Contains(entityId) ? "YES" : "NO";
         Diagnostic?.Invoke(new(utc,"char-lookup",$"Mapped lookup entity {entityId} -> {name} job={jobCode} level={level} server={serverId} combatMatch={combatHit}",d.Length));
@@ -838,7 +856,7 @@ public sealed class PacketDispatcher
                 level = d[afterName+4] | (d[afterName+5] << 8) | (d[afterName+6] << 16) | (d[afterName+7] << 24);
                 if (level >= 1 && level <= 55)
                 {
-                    className = jobCode switch { 11 => "Gladiator", 12 => "Templar", 13 => "Assassin", 14 => "Ranger", 15 => "Sorcerer", 16 => "Spiritmaster", 17 => "Cleric", 18 => "Chanter", _ => "Unknown" };
+                    className = ClassFromJobCode(jobCode);
                 }
             }
             partyIdentities[id] = new PlayerIdentity(name, className);
@@ -849,6 +867,20 @@ public sealed class PacketDispatcher
                 yield return new(CombatKind.PlayerName, id, name, 0, "", "", 0, DamageType.Unknown, 0,0,"",0);
         }
     }
+
+    private static string ClassFromJobCode(int code) => code switch
+    {
+        >= 5 and <= 8 => "Gladiator",
+        >= 9 and <= 12 => "Templar",
+        >= 13 and <= 16 => "Ranger",
+        >= 17 and <= 20 => "Assassin",
+        >= 21 and <= 24 => "Spiritmaster",
+        >= 25 and <= 28 => "Sorcerer",
+        >= 29 and <= 32 => "Cleric",
+        >= 33 and <= 36 => "Chanter",
+        >= 37 and <= 40 => "Brawler",
+        _ => "Unknown"
+    };
 
     private static string ClassFromSkill(int skill)
     {
@@ -865,7 +897,9 @@ public sealed class PacketDispatcher
             else if (d[i] == 69 && d[i + 1] == 54) kind = "otherInfo";
             if (kind is null) continue;
 
-            var evt = ObserveIdentity(d, i + 2, utc, kind);
+            var evt = kind == "selfInfo"
+                ? ObserveSelfIdentity(d, i + 2, utc)
+                : ObserveIdentity(d, i + 2, utc, kind);
             if (evt is not null)
             {
                 ValidationRecord?.Invoke($"{utc:O}|tag=embeddedIdentity|packet={kind}|entity={evt.SourceId}|name={evt.Source}|offset={i}|raw={Convert.ToHexString(d)}");

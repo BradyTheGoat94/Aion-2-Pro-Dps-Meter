@@ -240,4 +240,35 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal("Shinko", identity.Source);
     }
 
+
+    [Fact]
+    public void SelfInfo_CurrentGlobal_ResolvesBeforeProfileDispatch()
+    {
+        // Exact prefix from the 2026-10-04 live Global self-info packet:
+        // 33 36, combat entity 3920, length-prefixed "Bradyboi".
+        const string hex = "D9103336D01E5F91C12837084272616479626F69";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var identity = Assert.Single(events, x => x.Kind == CombatKind.PlayerName);
+        Assert.Equal(3920, identity.SourceId);
+        Assert.Equal("Bradyboi", identity.Source);
+    }
+
+    [Fact]
+    public void GlobalSessionLink_CurrentGlobal_ParsesBeforeProfileDispatch()
+    {
+        // Exact prefix from the packet immediately preceding the live self-info:
+        // 20 36, session/combat entity 3920, stable/global character id 304076.
+        const string hex = "CF0B20360000D01E00000000CCA3040000003608A602CC08E615";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var records = new List<string>();
+        dispatcher.ValidationRecord += records.Add;
+
+        _ = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        Assert.Contains(records, x =>
+            x.Contains("tag=globalSessionLink|session=3920|global=304076", StringComparison.Ordinal));
+    }
+
 }
