@@ -23,7 +23,7 @@ jobs:
           from pathlib import Path
           import lz4.block
 
-          requested=[1216310,1217120,1220560,1225050,1225080,1230760,1230770,1230780,1231310,1231320,1231340,1231450,1231470,1231480,1234030,1234060,1234070,1234080,1234090,1234210,1236570,1236575,3000021]
+          requested=[16990001,16990002,16990003,16990004,16990005]
           data=Path('/tmp/Aion2Flow/src/Aion2Flow.Resources/Packs/en-US.bin').read_bytes()
           pack_magic,version,kind,reserved,uncompressed_len,checksum,compressed_len=struct.unpack_from('<IHBBiQi',data,0)
           assert (pack_magic,version,kind)==(0x50523241,14,2)
