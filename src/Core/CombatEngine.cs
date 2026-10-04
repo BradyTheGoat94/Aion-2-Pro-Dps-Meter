@@ -79,17 +79,28 @@ public sealed class CombatEngine
         }
         if(confirmed&&named)confirmedIdentities.Add(id);
         identities[id] = new Identity(named ? name : old?.Name ?? $"Actor {id}", cls != "Unknown" && !string.IsNullOrWhiteSpace(cls) ? cls : old?.ClassName ?? "Unknown");
+        long identityKey = Key(id);
         // Identity packets can arrive seconds after combat starts. Refresh the
         // active encounter's cached event labels when a placeholder becomes a
         // confirmed player name, while preserving completed encounter history
-        // and the existing ID-reuse safeguards above.
+        // and the existing ID-reuse safeguards above. Metrics stay keyed by
+        // entity id, so late confirmation makes the already-captured damage
+        // visible without replaying or double-counting it.
         if (current.Start != null && !current.Completed)
         {
-            current.Names[Key(id)] = identities[id];
-            if (confirmed && named) RefreshActiveIdentity(current, Key(id), identities[id]);
+            current.Names[identityKey] = identities[id];
+            if (confirmed && named)
+            {
+                current.ConfirmedPlayers.Add(identityKey);
+                RefreshActiveIdentity(current, identityKey, identities[id]);
+            }
         }
-        overall.Names[Key(id)] = identities[id];
-        if (confirmed && named) RefreshActiveIdentity(overall, Key(id), identities[id]);
+        overall.Names[identityKey] = identities[id];
+        if (confirmed && named)
+        {
+            overall.ConfirmedPlayers.Add(identityKey);
+            RefreshActiveIdentity(overall, identityKey, identities[id]);
+        }
     }
     private static void RefreshActiveIdentity(Encounter encounter, long id, Identity identity)
     {
@@ -120,6 +131,7 @@ public sealed class CombatEngine
         long source=Key(rawSource),targetId=Key(rawTarget);
         if (identities.TryGetValue(rawSource, out var si)) encounter.Names[source] = si;
         if (identities.TryGetValue(rawTarget, out var ti)) encounter.Names[targetId] = ti;
+        if (confirmedIdentities.Contains(rawSource)) encounter.ConfirmedPlayers.Add(source);
         encounter.Events.Enqueue(e with {SourceId=source,TargetId=targetId,Source=encounter.Names.GetValueOrDefault(source)?.Name??e.Source,Target=encounter.Names.GetValueOrDefault(targetId)?.Name??e.Target});
         while(encounter.Events.Count > 2000) encounter.Events.Dequeue();
         if ((e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0)
@@ -235,26 +247,28 @@ public sealed class CombatEngine
     {
         double seconds=isOverall?overall.CompletedDuration+(current.Start!=null&&!current.Completed?Seconds(current):0):e.Completed?e.Duration:Seconds(e);
         double divisor=Math.Max(1,seconds);
-        var totals=e.Metrics.Where(x=>x.Key.Category==category).GroupBy(x=>x.Key.Id).ToDictionary(x=>x.Key,x=>x.Sum(y=>y.Value.Amount));
+        bool confirmedPlayersOnly = category is MeterCategory.Damage or MeterCategory.Healing;
+        var categoryMetrics=e.Metrics.Where(x=>x.Key.Category==category && (!confirmedPlayersOnly || e.ConfirmedPlayers.Contains(x.Key.Id)));
+        var totals=categoryMetrics.GroupBy(x=>x.Key.Id).ToDictionary(x=>x.Key,x=>x.Sum(y=>y.Value.Amount));
         if(category is MeterCategory.Buffs or MeterCategory.Debuffs)
             totals=e.Buffs.Where(x=>x.Key.Debuff==(category==MeterCategory.Debuffs)).GroupBy(x=>x.Key.Target).ToDictionary(x=>x.Key,x=>(long)Math.Round(x.Sum(y=>y.Value.Seconds(e.Last??clock()))));
         long total=totals.Values.Sum();
         var rows=totals.Select(x=>
         {
             var name=e.Names.GetValueOrDefault(x.Key)??new Identity($"Actor {x.Key}","Unknown");
-            var stats=e.Metrics.Where(y=>y.Key.Id==x.Key && y.Key.Category==category).Select(y=>y.Value).ToList();
+            var stats=categoryMetrics.Where(y=>y.Key.Id==x.Key).Select(y=>y.Value).ToList();
             long hits=stats.Sum(y=>y.Hits), crits=stats.Sum(y=>y.Crits);
             bool rate=category is MeterCategory.Damage or MeterCategory.Healing or MeterCategory.DamageTaken;
             return new PlayerStats(name.Name,name.ClassName,x.Value,rate?x.Value/divisor:x.Value,total==0?0:x.Value*100.0/total,hits,hits==0?0:crits*100.0/hits,x.Key,x.Value/Math.Max(1,e.ActorActive.GetValueOrDefault(x.Key)),entityKeys.FirstOrDefault(y=>y.Value==x.Key).Key is var raw && raw!=0?raw:x.Key);
         }).OrderByDescending(x=>x.Damage).ToArray();
-        var skills=e.Metrics.Where(x=>x.Key.Category==category).Select(x=>new SkillStats(x.Key.Skill,x.Value.Amount,x.Value.Hits,x.Value.Amount/divisor,
+        var skills=categoryMetrics.Select(x=>new SkillStats(x.Key.Skill,x.Value.Amount,x.Value.Hits,x.Value.Amount/divisor,
             x.Key.Id,x.Value.Crits,x.Value.Hits==0?0:x.Value.Crits*100.0/x.Value.Hits,totals.GetValueOrDefault(x.Key.Id)==0?0:x.Value.Amount*100.0/totals[x.Key.Id],
             x.Value.Hits==0?0:x.Value.Amount*1.0/x.Value.Hits,x.Value.Min==long.MaxValue?0:x.Value.Min,x.Value.Max,x.Value.Flags) {FlagHits=new Dictionary<DamageFlags,long>(x.Value.FlagHits)}).OrderByDescending(x=>x.Damage).ToArray();
         var buffs=e.Buffs.Select(x=>new BuffStats(x.Key.Name,Math.Clamp(x.Value.Seconds(e.Last??clock())/divisor*100,0,100),x.Value.MaxStacks,x.Key.Source,x.Key.Target,x.Key.Debuff,x.Value.Seconds(e.Last??clock()))).ToArray();
-        long damage=e.Metrics.Where(x=>x.Key.Category==MeterCategory.Damage).Sum(x=>x.Value.Amount);
-        long overallDamage=overall.Metrics.Where(x=>x.Key.Category==MeterCategory.Damage).Sum(x=>x.Value.Amount);
+        long damage=e.Metrics.Where(x=>x.Key.Category==MeterCategory.Damage && e.ConfirmedPlayers.Contains(x.Key.Id)).Sum(x=>x.Value.Amount);
+        long overallDamage=overall.Metrics.Where(x=>x.Key.Category==MeterCategory.Damage && overall.ConfirmedPlayers.Contains(x.Key.Id)).Sum(x=>x.Value.Amount);
         double overallSeconds=overall.CompletedDuration+(current.Start!=null&&!current.Completed?Seconds(current):0);
-        var targets=e.ActorTargets.Select(x=>new ActorTargetStats(x.Key.Actor,x.Key.Target,e.Names.GetValueOrDefault(x.Key.Target)?.Name??$"Target {x.Key.Target}",x.Value,
+        var targets=e.ActorTargets.Where(x=>e.ConfirmedPlayers.Contains(x.Key.Actor)).Select(x=>new ActorTargetStats(x.Key.Actor,x.Key.Target,e.Names.GetValueOrDefault(x.Key.Target)?.Name??$"Target {x.Key.Target}",x.Value,
             x.Value*100.0/Math.Max(1,e.Metrics.Where(y=>y.Key.Id==x.Key.Actor&&y.Key.Category==MeterCategory.Damage).Sum(y=>y.Value.Amount)))).ToArray();
         return new(e.Start!=null&&!e.Completed,PreviewMode,seconds,damage,damage/divisor,overallDamage,overallDamage/Math.Max(1,overallSeconds),e.Target,rows,skills,buffs,e.Events.ToArray())
         { Targets=targets, Categories=includeCategories?Enum.GetValues<MeterCategory>().ToDictionary(c=>c,c=> {var snapshot=Build(e,c,isOverall,false);return new CategorySnapshot(snapshot.Players,snapshot.Skills,snapshot.MetricLabel);}):new Dictionary<MeterCategory,CategorySnapshot>(), EncounterId=e.Id,StartedUtc=e.Start,EndReason=e.EndReason,Category=category,MetricLabel=category==MeterCategory.Healing?"HPS":category is MeterCategory.Damage or MeterCategory.DamageTaken?"DPS":category is MeterCategory.Buffs or MeterCategory.Debuffs?"SECONDS":"COUNT",ActiveSeconds=e.ActiveSeconds };
@@ -268,6 +282,7 @@ public sealed class CombatEngine
         public Dictionary<long,DateTime> ActorLast=new(); public Dictionary<long,double> ActorActive=new();
         public Dictionary<(long Actor,long Target),long> ActorTargets=new();
         public Dictionary<long,Identity> Names=new(); public Dictionary<long,long> TargetDamage=new();
+        public HashSet<long> ConfirmedPlayers=new();
         public Dictionary<(long Id,MeterCategory Category,string Skill),Stat> Metrics=new();
         public Dictionary<(string Name,long Source,long Target,bool Debuff),BuffWindow> Buffs=new(); public Queue<CombatEvent> Events=new();
     }
