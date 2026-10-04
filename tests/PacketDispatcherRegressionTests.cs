@@ -198,7 +198,8 @@ public sealed class PacketDispatcherRegressionTests
         // real hit (1119) after stable/base 10380, while a later field is the
         // hit ordinal 5. The decoder must not report that ordinal as damage.
         const string hex = "21043891B5010400D644007EE50018023338A559050000008C51DF080500";
-        var events = Decode(hex);
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
         var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
         Assert.Equal("Firestorm", hit.Skill);
         Assert.Equal(1119, hit.Amount);
