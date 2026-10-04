@@ -2074,10 +2074,36 @@ internal static class PublicGameData
 
     private static readonly IReadOnlyDictionary<int,string> VerifiedEnglishSkillNames = new Dictionary<int,string>
     {
-        // Aion2Flow public en-US resource pack (format v14), exact ID lookup.
-        // Verified 2026-10-04 by decoding its SkillNames section; this skill is
-        // present repeatedly in the same live capture as actor 7428/Bradyboi.
+        // Exact entries decoded from Aion2Flow's published en-US SkillNames
+        // resource pack (format v14) on 2026-10-04. Keep this table exact-ID
+        // only: 1200015 was absent and intentionally remains a numeric fallback.
         [3000020] = "Theostone: Aultross's Promise",
+        [1910251] = "Spectral Blade",
+        [1223380] = "Attack",
+        [1223730] = "Attack",
+        [1223700] = "Attack",
+        [1217410] = "Attack",
+        [1223470] = "Attack",
+        [1217530] = "Attack",
+        [1231910] = "Attack",
+        [1231890] = "Attack",
+        [1223500] = "Attack",
+        [1217560] = "Attack",
+        [1230010] = "Attack",
+        [1223490] = "Attack",
+        [1217570] = "Attack",
+        [1231100] = "Attack",
+        [1231120] = "Attack",
+        [1231880] = "Attack",
+        [1223400] = "Attack",
+        [1223480] = "Attack",
+        [1223410] = "Attack",
+        [1223720] = "Attack",
+        [1240500] = "Attack",
+        [1231110] = "Attack",
+        [1230040] = "Attack",
+        [1231921] = "Attack",
+        [1231920] = "Attack",
     };
 
     private static string LocalizeEnglish(string name)
