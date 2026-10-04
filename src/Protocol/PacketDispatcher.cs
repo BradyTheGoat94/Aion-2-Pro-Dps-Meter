@@ -651,7 +651,11 @@ public sealed class PacketDispatcher
         int end = Math.Min(d.Length - 2, start + 96);
         for (int i = Math.Max(0, start); i < end; i++)
         {
-            if (d[i] != 0x07) continue;
+            // Global's July 2026 nickname update changed the character-name
+            // marker observed in 45 36 user-info packets from 0x07 to 0x17.
+            // Accept both layouts; the following length/name validation remains
+            // identical and prevents arbitrary strings from becoming identities.
+            if (d[i] != 0x07 && d[i] != 0x17) continue;
             int len = d[i + 1];
             if (len < 3 || len > 24 || i + 2 + len > d.Length) continue;
             var bytes = d.Slice(i + 2, len);
