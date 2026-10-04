@@ -689,4 +689,23 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal("Combat ended", engine.History[^1].EndReason);
     }
 
+
+    [Fact]
+    public void Skill3000020_PublicEnglishResource_UsesExactName()
+    {
+        // Exact live damage packet from 2026-10-04 for actor 7428/Bradyboi.
+        // The English name was independently resolved from Aion2Flow's public
+        // en-US SkillNames resource section for exact ID 3000020.
+        const string hex = "24043884FE020600843AD4C62D003402000002DBAAE11101000000DF58C6030100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(7428, hit.SourceId);
+        Assert.Equal(48900, hit.TargetId);
+        Assert.Equal(454, hit.Amount);
+        Assert.Equal(DamageType.Frontal, hit.DamageType);
+        Assert.Equal("Theostone: Aultross's Promise", hit.Skill);
+    }
+
 }
