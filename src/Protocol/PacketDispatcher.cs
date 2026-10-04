@@ -15,6 +15,8 @@ public sealed class PacketDispatcher
     private readonly Dictionary<long, MobIdentity> mobs = new();
     private readonly Dictionary<long, long> summonOwners = new();
     private readonly HashSet<long> confirmedSummons = new();
+    private readonly Dictionary<long, UnresolvedSummonObservation> unresolvedSummonCandidates = new();
+    private readonly Queue<RecentSummonSpawn> recentSummonSpawns = new();
     public event Action<DecoderDiagnostic>? Diagnostic;
     public event Action<string>? ValidationRecord;
     public PacketDispatcher(ProtocolProfile profile) => this.profile = profile;
@@ -123,7 +125,7 @@ public sealed class PacketDispatcher
             "damage" => TryDamage(frame, p+2, utc),
             "dot" => TryDot(frame, p+2, utc),
             "bossHp" => TryBossHp(frame, p+2, utc),
-            "entityRemoved" => RemoveEntity(frame, p+2),
+            "entityRemoved" => RemoveEntity(frame, p+2, utc),
             "selfInfo" => ObserveSelfIdentity(frame, p+2, utc),
             "otherInfo" => ObserveIdentity(frame, p+2, utc, "otherInfo"),
             "charLookup" => TryCharacterLookup(frame, p+2, utc),
@@ -134,10 +136,12 @@ public sealed class PacketDispatcher
         else Diagnostic?.Invoke(new(utc,"dispatch",$"Matched {kind}; no validated event emitted",frame.Length));
     }
 
-    private Aion2Decoded? RemoveEntity(ReadOnlySpan<byte> frame,int p)
+    private Aion2Decoded? RemoveEntity(ReadOnlySpan<byte> frame,int p,DateTime utc)
     {
         if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
         long id=(long)value;
+        if (unresolvedSummonCandidates.TryGetValue(id, out var unresolved))
+            ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonLifecycle|actor={id}|event=entityRemoved|hits={unresolved.Hits}|first={unresolved.FirstSeen:O}|last={unresolved.LastSeen:O}|skills={string.Join(",", unresolved.Skills)}");
         // Captures show this removal for named players and confirmed summons
         // that continue participating seconds later. Treat it as a visibility
         // removal, not proof that the entity generation ended. A later spawn
@@ -170,6 +174,7 @@ public sealed class PacketDispatcher
         // Public reference resolves skill IDs from packet bytes using a skill database. Until that
         // catalog is embedded, accept a bounded varint candidate and retain its numeric identity.
         if (!TryReadSkillField(d, ref p, out var skill)) return null;
+        var skillName = SkillName(checked((int)skill));
         int postSkillPos = p;
         if (!ReadV(d, ref p, out var damageType)) return null;
 
@@ -204,7 +209,7 @@ public sealed class PacketDispatcher
         // validated stable/base -> real-hit pair.
         if (damage <= 5)
         {
-            if (TryRecoverAlternateDamage(d, out var recoveredDamage))
+            if (TryRecoverAlternateDamage(d, checked((int)skill), out var recoveredDamage))
                 damage = recoveredDamage;
         }
 
@@ -213,14 +218,15 @@ public sealed class PacketDispatcher
         var dtype = DecodeType((byte)damageType, mods, direction);
         var dflags = DecodeFlags((byte)damageType, mods, direction);
         Diagnostic?.Invoke(new(utc,"damage-flags",$"rawType={damageType} mods=0x{mods:X2} direction=0x{direction:X2} decoded={dtype} flags={dflags}",d.Length));
-        ValidationRecord?.Invoke($"{utc:O}|tag=damageFlags|actor={actor}|target={target}|skill={SkillName(checked((int)skill))}|rawType={damageType}|mods=0x{mods:X2}|direction=0x{direction:X2}|decoded={dtype}|crit={damageType==3}|parry={(mods&0x02)!=0}|perfect={(mods&0x04)!=0}|double={(mods&0x08)!=0}|back={direction==1}|front={direction==2}");
+        ValidationRecord?.Invoke($"{utc:O}|tag=damageFlags|actor={actor}|target={target}|skill={skillName}|rawType={damageType}|mods=0x{mods:X2}|direction=0x{direction:X2}|decoded={dtype}|crit={damageType==3}|parry={(mods&0x02)!=0}|perfect={(mods&0x04)!=0}|double={(mods&0x08)!=0}|back={direction==1}|front={direction==2}");
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
         long originalActorId = actorId;
+        TraceUnresolvedSummonCandidate(originalActorId, targetId, checked((int)skill), skillName, utc, d);
         if (summonOwners.TryGetValue(actorId, out var ownerId))
         {
             actorId = ownerId;
-            ValidationRecord?.Invoke($"{utc:O}|tag=summonDamage|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={damage}");
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonDamage|summon={originalActorId}|owner={ownerId}|skill={skillName}|amount={damage}");
         }
         string actorName;
         string actorClass;
@@ -240,7 +246,7 @@ public sealed class PacketDispatcher
         long currentHp = 0, maxHp = 0;
         if (mobs.TryGetValue(targetId, out var mobState)) { currentHp = mobState.CurrentHp; maxHp = mobState.MaxHp; }
         return new(CombatKind.Damage, actorId, actorName, targetId, targetName,
-            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass, dflags, sourceIdentityConfirmed);
+            skillName, (long)damage, dtype, currentHp,maxHp,"",0, actorClass, dflags, sourceIdentityConfirmed);
     }
 
     private Aion2Decoded? TryDot(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -255,13 +261,15 @@ public sealed class PacketDispatcher
         RememberCombatEntity(actor); RememberCombatEntity(target);
         uint skill=raw/100; if (skill==0) return null;
         if (damage<=0 && heal<=0) return null;
+        var skillName = SkillName(checked((int)skill));
         long actorId = checked((long)actor);
         long targetId = checked((long)target);
         long originalActorId = actorId;
+        TraceUnresolvedSummonCandidate(originalActorId, targetId, checked((int)skill), skillName, utc, d);
         if (summonOwners.TryGetValue(actorId, out var ownerId))
         {
             actorId = ownerId;
-            ValidationRecord?.Invoke($"{utc:O}|tag=summonDot|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={(damage>0?damage:(long)heal)}");
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonDot|summon={originalActorId}|owner={ownerId}|skill={skillName}|amount={(damage>0?damage:(long)heal)}");
         }
         string actorName;
         string actorClass;
@@ -278,7 +286,7 @@ public sealed class PacketDispatcher
         }
         bool sourceIdentityConfirmed = !mobs.ContainsKey(actorId) && identities.ContainsKey(actorId);
         return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveTargetName(targetId),
-            SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass, DamageFlags.None, sourceIdentityConfirmed);
+            skillName, damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass, DamageFlags.None, sourceIdentityConfirmed);
     }
 
     private void TryRegisterSummonOwner(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -296,6 +304,8 @@ public sealed class PacketDispatcher
         {
             summonOwners.Remove(summonId);
             confirmedSummons.Remove(summonId);
+            if (unresolvedSummonCandidates.Remove(summonId, out var stale))
+                ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonLifecycle|actor={summonId}|event=nonSummonSpawn|hits={stale.Hits}|first={stale.FirstSeen:O}|last={stale.LastSeen:O}");
             return;
         }
         confirmedSummons.Add(summonId);
@@ -305,10 +315,19 @@ public sealed class PacketDispatcher
         // Live capture 2026-10-03 proved this exact shape for SevenSins:
         // parent_key=82824, legion_id=15, pad=0, server_id=2102, legion="Karma".
         // The trailing string is legion metadata; the u32 parent_key is the owner.
+        var parentCandidates = DescribeSpawnParentCandidates(d, q, summonId);
         if (TryFindSpawnParentKey(d, q, summonId, out var ownerId, out var legion))
         {
             summonOwners[summonId] = ownerId;
+            RememberRecentSummonSpawn(utc, summonId, ownerId, parentCandidates);
+            if (unresolvedSummonCandidates.Remove(summonId, out var resolved))
+                ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonResolved|actor={summonId}|owner={ownerId}|source=4136-parent-key|hits={resolved.Hits}|skills={string.Join(",", resolved.Skills)}");
             ValidationRecord?.Invoke($"{utc:O}|tag=summonOwner|summon={summonId}|owner={ownerId}|source=4136-parent-key|legion={legion}");
+        }
+        else
+        {
+            RememberRecentSummonSpawn(utc, summonId, 0, parentCandidates);
+            ValidationRecord?.Invoke($"{utc:O}|tag=summonOwnerMissingEvidence|summon={summonId}|parentCandidates={parentCandidates}|raw={Convert.ToHexString(d)}");
         }
     }
 
@@ -375,6 +394,9 @@ public sealed class PacketDispatcher
         }
 
         summonOwners[summonId] = ownerId;
+        RememberRecentSummonSpawn(utc, summonId, ownerId, "048D");
+        if (unresolvedSummonCandidates.Remove(summonId, out var resolved))
+            ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonResolved|actor={summonId}|owner={ownerId}|source=048D|hits={resolved.Hits}|skills={string.Join(",", resolved.Skills)}");
         if (!string.IsNullOrWhiteSpace(ownerName))
             identities[ownerId] = new PlayerIdentity(ownerName, identities.TryGetValue(ownerId, out var old) ? old.ClassName : "Unknown");
 
@@ -383,6 +405,110 @@ public sealed class PacketDispatcher
             ? new(CombatKind.PlayerName, ownerId, ownerName, 0, "", "", 0, DamageType.Unknown, 0, 0, "", 0)
             : null;
     }
+
+    private static bool IsSummonExclusiveSkill(int skill, string skillName)
+    {
+        // Exact codes observed as summon-only attacks in live Global captures.
+        if (skill is 16100004 or 16110004 or 16120001 or 16120004 or 16130004 or 16990002 or 16990003)
+            return true;
+
+        return skillName.StartsWith("Fire Spirit:", StringComparison.Ordinal)
+            || skillName.StartsWith("Water Spirit:", StringComparison.Ordinal)
+            || skillName.StartsWith("Wind Spirit:", StringComparison.Ordinal)
+            || skillName.StartsWith("Earth Spirit:", StringComparison.Ordinal)
+            || skillName.StartsWith("Ancient Spirit:", StringComparison.Ordinal);
+    }
+
+    private void TraceUnresolvedSummonCandidate(long actorId, long targetId, int skill, string skillName, DateTime utc, ReadOnlySpan<byte> d)
+    {
+        if (actorId <= 0 || summonOwners.ContainsKey(actorId) || identities.ContainsKey(actorId))
+            return;
+        if (mobs.ContainsKey(actorId) && !confirmedSummons.Contains(actorId))
+            return;
+        if (!IsSummonExclusiveSkill(skill, skillName))
+            return;
+
+        if (!unresolvedSummonCandidates.TryGetValue(actorId, out var observation))
+        {
+            observation = new UnresolvedSummonObservation(utc);
+            unresolvedSummonCandidates[actorId] = observation;
+        }
+        observation.LastSeen = utc;
+        observation.Hits++;
+        observation.Skills.Add(skillName);
+
+        TrimRecentSummonSpawns(utc);
+        string nearby = string.Join(",", recentSummonSpawns
+            .Where(x => Math.Abs((utc - x.Utc).TotalSeconds) <= 8)
+            .Select(x => $"{x.SummonId}->{(x.OwnerId > 0 ? x.OwnerId.ToString() : "?")}@{(int)(utc - x.Utc).TotalMilliseconds}ms[{x.ParentCandidates}]")
+            .Take(12));
+        if (string.IsNullOrWhiteSpace(nearby)) nearby = "none";
+
+        string spiritmasters = string.Join(",", identities
+            .Where(x => string.Equals(x.Value.ClassName, "Spiritmaster", StringComparison.Ordinal))
+            .OrderBy(x => x.Key)
+            .Take(12)
+            .Select(x => $"{x.Key}:{x.Value.Name}"));
+        if (string.IsNullOrWhiteSpace(spiritmasters)) spiritmasters = "none";
+
+        ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonCandidate|actor={actorId}|target={targetId}|skillId={skill}|skill={skillName}|hits={observation.Hits}|first={observation.FirstSeen:O}|confirmedSpawn={confirmedSummons.Contains(actorId)}|nearbySpawns={nearby}|spiritmasters={spiritmasters}|raw={Convert.ToHexString(d)}");
+    }
+
+    private void RememberRecentSummonSpawn(DateTime utc, long summonId, long ownerId, string parentCandidates)
+    {
+        recentSummonSpawns.Enqueue(new RecentSummonSpawn(utc, summonId, ownerId, parentCandidates));
+        TrimRecentSummonSpawns(utc);
+        while (recentSummonSpawns.Count > 64) recentSummonSpawns.Dequeue();
+    }
+
+    private void TrimRecentSummonSpawns(DateTime utc)
+    {
+        while (recentSummonSpawns.Count > 0 && (utc - recentSummonSpawns.Peek().Utc).TotalSeconds > 15)
+            recentSummonSpawns.Dequeue();
+    }
+
+    private string DescribeSpawnParentCandidates(ReadOnlySpan<byte> d, int searchFrom, long summonId)
+    {
+        var candidates = new List<string>();
+        int end = Math.Min(d.Length - 13, searchFrom + 180);
+        for (int i = Math.Max(0, searchFrom); i <= end && candidates.Count < 8; i++)
+        {
+            uint parent = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(i, 4));
+            if (parent == 0 || parent > 9_999_999 || parent == summonId) continue;
+
+            uint legionId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(d.Slice(i + 4, 4));
+            ushort pad = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i + 8, 2));
+            ushort serverId = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(d.Slice(i + 10, 2));
+            int nameLen = d[i + 12];
+            if (pad != 0 || serverId == 0 || serverId > 9_999 || nameLen > 40 || i + 13 + nameLen > d.Length)
+                continue;
+
+            string legion;
+            try { legion = System.Text.Encoding.UTF8.GetString(d.Slice(i + 13, nameLen)); }
+            catch { continue; }
+            if (nameLen > 0 && legion.Any(char.IsControl)) continue;
+
+            long parentId = parent;
+            bool known = identities.ContainsKey(parentId) || partyIdentities.ContainsKey(parentId) || recentCombatEntityIds.Contains(parentId);
+            candidates.Add($"{parentId}@{i}:server={serverId}:legionId={legionId}:legion={legion}:known={known}");
+        }
+        return candidates.Count == 0 ? "none" : string.Join(",", candidates);
+    }
+
+    private sealed class UnresolvedSummonObservation
+    {
+        public UnresolvedSummonObservation(DateTime firstSeen)
+        {
+            FirstSeen = firstSeen;
+            LastSeen = firstSeen;
+        }
+        public DateTime FirstSeen { get; }
+        public DateTime LastSeen { get; set; }
+        public int Hits { get; set; }
+        public HashSet<string> Skills { get; } = new(StringComparer.Ordinal);
+    }
+
+    private sealed record RecentSummonSpawn(DateTime Utc, long SummonId, long OwnerId, string ParentCandidates);
 
     private string ResolveTargetName(long id)
         => mobs.TryGetValue(id, out var mob) ? mob.Name : ResolveName(id, "Target");
@@ -532,21 +658,23 @@ public sealed class PacketDispatcher
         return string.Join(",", parts);
     }
 
-    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, out ulong damage)
+    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, out ulong damage)
     {
         damage = 0;
-        // Alternate packets observed in validation carry a stable actor/base
-        // value near the tail, followed immediately by the real varying hit.
-        // Search only the final portion and require a plausible non-tiny hit.
-        // The charged Punishment packet has a longer tail than ordinary
-        // damage packets. In live Global captures its authoritative pair is
-        // 11350 -> <damage> (for example 11350 -> 21636), while the generic
-        // layout can otherwise land on the later hit-count value (3).
+        // Short category-4 packets sometimes leave a hit ordinal in the generic
+        // slot and carry one or more base -> value pairs in the tail.
         //
-        // Keep this structural rather than skill-name-specific: only recover
-        // when a plausible stable/base value is immediately followed by a
-        // plausible hit, but scan enough of the tail to include that pair.
+        // Most verified short variants (Punishing Benediction, Desperate Strike,
+        // Poach, Vitality Evaporation, Vacuum Explosion, Corrode, Firestorm and
+        // charged Punishment) use the FINAL plausible pair for real damage.
+        //
+        // Water/Wind Spirit basic attacks are a proven exception: across multiple
+        // 2026-10-03/04 captures the first pair is 8751 -> 101 damage while the
+        // later pair carries non-damage metadata (e.g. 10600 -> 20/92 or
+        // 10360 -> 78). Preserve only the exact observed basic-attack IDs.
         int start = Math.Max(0, d.Length - 18);
+        ulong firstHit = 0;
+        ulong lastHit = 0;
         bool found = false;
         for (int i = start; i < d.Length; i++)
         {
@@ -555,14 +683,20 @@ public sealed class PacketDispatcher
             if (first < 5_000 || first > 50_000) continue;
             if (!ReadV(d, ref p, out var hit)) continue;
             if (hit < 20 || hit > 5_000_000) continue;
-
-            // Prefer the final validated base -> hit pair in the tail. The
-            // 2026-10-04 short Corrode packet contains an earlier 7023 -> 12743
-            // metadata pair and the authoritative later 12280 -> 1626 pair.
-            damage = hit;
+            if (!found) firstHit = hit;
+            lastHit = hit;
             found = true;
         }
-        return found;
+        if (!found) return false;
+
+        if (skill is 16990002 or 16990003)
+        {
+            damage = firstHit;
+            return true;
+        }
+
+        damage = lastHit;
+        return true;
     }
 
     private sealed record PlayerIdentity(string Name, string ClassName);
@@ -578,6 +712,8 @@ public sealed class PacketDispatcher
         // entity id was previously retained as a summon across visibility removal.
         summonOwners.Remove(globalId);
         confirmedSummons.Remove(globalId);
+        if (unresolvedSummonCandidates.Remove(globalId, out var unresolved))
+            ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonLifecycle|actor={globalId}|event=trustedPlayerIdentity|hits={unresolved.Hits}|name={name}|source={source}");
         var resolvedClass = className;
         if (resolvedClass == "Unknown" && identities.TryGetValue(globalId, out var existing))
             resolvedClass = existing.ClassName;

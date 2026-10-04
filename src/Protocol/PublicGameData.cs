@@ -2074,10 +2074,36 @@ internal static class PublicGameData
 
     private static readonly IReadOnlyDictionary<int,string> VerifiedEnglishSkillNames = new Dictionary<int,string>
     {
-        // Aion2Flow public en-US resource pack (format v14), exact ID lookup.
-        // Verified 2026-10-04 by decoding its SkillNames section; this skill is
-        // present repeatedly in the same live capture as actor 7428/Bradyboi.
+        // Aion2Flow public en-US resource pack (format v14), exact ID lookups.
+        // These are deliberately exact-ID overrides so the meter stays useful
+        // offline without inventing names from class/skill-family heuristics.
         [3000020] = "Theostone: Aultross's Promise",
+        [3000021] = "Theostone: Bargott's Ember",
+
+        // Current 2026-10-04 live capture: every one of these exact IDs is
+        // published as "Attack" in Aion2Flow's en-US SkillNames section.
+        [1216310] = "Attack",
+        [1217120] = "Attack",
+        [1220560] = "Attack",
+        [1225050] = "Attack",
+        [1225080] = "Attack",
+        [1230760] = "Attack",
+        [1230770] = "Attack",
+        [1230780] = "Attack",
+        [1231310] = "Attack",
+        [1231320] = "Attack",
+        [1231340] = "Attack",
+        [1231450] = "Attack",
+        [1231470] = "Attack",
+        [1231480] = "Attack",
+        [1234030] = "Attack",
+        [1234060] = "Attack",
+        [1234070] = "Attack",
+        [1234080] = "Attack",
+        [1234090] = "Attack",
+        [1234210] = "Attack",
+        [1236570] = "Attack",
+        [1236575] = "Attack",
     };
 
     private static string LocalizeEnglish(string name)

@@ -755,4 +755,129 @@ public sealed class PacketDispatcherRegressionTests
             x.Contains("tag=summonDamage|summon=85917|owner=9909", StringComparison.Ordinal));
     }
 
+
+    [Theory]
+    [InlineData(1216310, "Attack")]
+    [InlineData(1217120, "Attack")]
+    [InlineData(1220560, "Attack")]
+    [InlineData(1225050, "Attack")]
+    [InlineData(1225080, "Attack")]
+    [InlineData(1230760, "Attack")]
+    [InlineData(1230770, "Attack")]
+    [InlineData(1230780, "Attack")]
+    [InlineData(1231310, "Attack")]
+    [InlineData(1231320, "Attack")]
+    [InlineData(1231340, "Attack")]
+    [InlineData(1231450, "Attack")]
+    [InlineData(1231470, "Attack")]
+    [InlineData(1231480, "Attack")]
+    [InlineData(1234030, "Attack")]
+    [InlineData(1234060, "Attack")]
+    [InlineData(1234070, "Attack")]
+    [InlineData(1234080, "Attack")]
+    [InlineData(1234090, "Attack")]
+    [InlineData(1234210, "Attack")]
+    [InlineData(1236570, "Attack")]
+    [InlineData(1236575, "Attack")]
+    [InlineData(3000021, "Theostone: Bargott's Ember")]
+    public void VerifiedCurrentNumericSkillNames_UseExactEnglishResource(int skillId, string expected)
+    {
+        // Values were decoded by CI from Aion2Flow's public en-US format-v14
+        // SkillNames section for the exact IDs seen in combat-20261004-140140.log.
+        var type = typeof(PacketDispatcher).Assembly.GetType("Aion2DPSPro.Protocol.PublicGameData", throwOnError: true)!;
+        var method = type.GetMethod("SkillName",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+        var actual = Assert.IsType<string>(method.Invoke(null, new object[] { skillId }));
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Skill3000021_PublicEnglishResource_UsesExactName()
+    {
+        // Exact 2026-10-04 live packet, exact public en-US ID lookup.
+        const string hex = "24043890930406008F6ED5C62D00D0020000013FABE11101000000F252E40B0100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(14095, hit.SourceId);
+        Assert.Equal(67984, hit.TargetId);
+        Assert.Equal(1508, hit.Amount);
+        Assert.Equal(DamageType.Back, hit.DamageType);
+        Assert.Equal("Theostone: Bargott's Ember", hit.Skill);
+    }
+
+    [Theory]
+    [InlineData("210438ACA30304008C59913EC2001402AF70E04B01000000E9589C050100", 668)]
+    [InlineData("210438ACA30304008C593090B7001A02CB52B44701000000E9589C140100", 2588)]
+    [InlineData("220438DCA70414008C59D016B90040024BE94C4801000000E958920A010100", 1298)]
+    [InlineData("210438D8F2040400B972C716F100A602C7E52C5E01000000D658FD020100", 381)]
+    [InlineData("22043880D50414009E232A72F400BE0273987C5F01000000F850D304010100", 595)]
+    public void Damage_ShortCategory4Variants_UseVerifiedFinalDamagePair(string hex, long expected)
+    {
+        // Each packet's earlier pair is stable skill/metadata while the later
+        // base->hit pair matches neighboring normal-layout packets for the same
+        // skill: Punishing Benediction, Desperate Strike, Poach,
+        // Vitality Evaporation, and Vacuum Explosion respectively.
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(expected, hit.Amount);
+    }
+
+    [Theory]
+    [InlineData("200438B54D04009D9F05323F03010E0293AF446501000000F85F140100", 101)]
+    [InlineData("2004389E230400F09205333F03010802F7AF446501000000F8504E0100", 101)]
+    public void Damage_SpiritBasicAttackShortLayout_PreservesFirstDamagePair(string hex, long expected)
+    {
+        // Cross-capture guard. Water/Wind Spirit basic attacks repeatedly decode
+        // as 101 damage in 2026-10-03 captures while the later pair contains
+        // non-damage metadata (20/92/78). The generic final-pair recovery must
+        // not overwrite this proven layout.
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(expected, hit.Amount);
+    }
+
+    [Theory]
+    [InlineData("2304389D20060086ED02A8C712001102000001ABFD550701000000904E010100")]
+    [InlineData("200438D7DC020400F678C03BD6008B020B57AF5301000000DC51010100")]
+    [InlineData("230438B54D0600FDE10422D51200010200000253415B0701000000904E010100")]
+    [InlineData("2404389D9F050600FEAC04BCC7120003021000017B05560701000000904E010100")]
+    [InlineData("230438B54D0600CBC501A8C712000102000002ABFD550701000000904E010100")]
+    [InlineData("2304388C590600C0B3055ACA12000102410002330B570701000000904E010100")]
+    public void Damage_OnePointHitsWithoutValidatedAlternatePair_RemainOne(string hex)
+    {
+        // All six amount=1 packets in the latest capture lack a plausible
+        // alternate base->hit pair. Do not inflate them just because other short
+        // packet families use recovery.
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(1, hit.Amount);
+    }
+
+    [Fact]
+    public void UnresolvedSummonExclusiveSkill_LogsEvidenceWithoutGuessingOwner()
+    {
+        // Exact 2026-10-04 entity 84336 packet. It uses a summon-exclusive
+        // Wind Spirit skill but the capture contains no 84336 summonSpawn or
+        // owner relation. Diagnostics must surface the candidate while keeping
+        // the original actor id and never creating summonDamage attribution.
+        const string hex = "25043880D5040600F09205C1F8F5000403000002792B156002000000F850C7010200";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var records = new List<string>();
+        dispatcher.ValidationRecord += records.Add;
+
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(84336, hit.SourceId);
+        Assert.Contains(records, x =>
+            x.Contains("tag=unresolvedSummonCandidate|actor=84336", StringComparison.Ordinal));
+        Assert.DoesNotContain(records, x =>
+            x.Contains("tag=summonDamage|summon=84336", StringComparison.Ordinal));
+    }
+
 }
