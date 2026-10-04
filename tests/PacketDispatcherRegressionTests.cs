@@ -927,4 +927,40 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal("Theostone: Zikel's Vestige", hit.Skill);
     }
 
+
+    [Fact]
+    public void Damage_FuriousFeruk_MetadataTail_DoesNotInflateOneDamageHit()
+    {
+        // Exact 2026-10-04 monster-log packet. The generic layout lands on
+        // damage=1. A later unrelated tail sequence decodes as 12039 -> 9201
+        // and must never be treated as alternate damage.
+        const string hex = "280438EB2C4610DAB604EC8718000302D100023B18950901000000904E0101875EF1470100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(72538, hit.SourceId);
+        Assert.Equal(5739, hit.TargetId);
+        Assert.Equal("Attack", hit.Skill);
+        Assert.Equal(1, hit.Amount);
+        Assert.Equal(DamageType.Frontal, hit.DamageType);
+    }
+
+    [Fact]
+    public void Damage_FuriousFeruk_NormalAttackLayout_StillDecodesRealHit()
+    {
+        // Same exact public skill ID (1607660) in the ordinary layout.
+        // The stable 10000 base is followed by the real 956 hit.
+        const string hex = "240438EB2C0600DAB604EC8718000B020100023B18950901000000904EBC070100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(72538, hit.SourceId);
+        Assert.Equal(5739, hit.TargetId);
+        Assert.Equal("Attack", hit.Skill);
+        Assert.Equal(956, hit.Amount);
+        Assert.Equal(DamageType.Frontal, hit.DamageType);
+    }
+
 }

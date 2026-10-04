@@ -186,6 +186,7 @@ public sealed class PacketDispatcher
         var skillName = SkillName(checked((int)skill));
         int postSkillPos = p;
         if (!ReadV(d, ref p, out var damageType)) return null;
+        int recoveryStart = p;
 
         int[] trailing={0,0,0,0,8,12,10,14};
         byte mods=0, direction=0; int canonicalSpecialBytes=0;
@@ -211,14 +212,18 @@ public sealed class PacketDispatcher
         int trailer=trailing[category]-canonicalSpecialBytes; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out _)) return null;
+        int damageOrdinalPos = p;
         if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;
 
-        // Some multi-hit packets put the hit ordinal (1..5) in the generic
-        // damage slot. Recover only when the packet tail also contains the
-        // validated stable/base -> real-hit pair.
+        // Some short/multi-hit/special packets put a hit ordinal (1..5) in the
+        // generic damage slot. Verified recovered layouts carry the real
+        // base -> hit pair BEFORE that ordinal. Search only the bounded prefix
+        // leading up to the ordinal; never scan afterward into unrelated tail
+        // metadata (which falsely turned a Furious Feruk 1-damage packet into
+        // 9,201 by reading a later 12039 -> 9201 metadata pair).
         if (damage <= 5)
         {
-            if (TryRecoverAlternateDamage(d, checked((int)skill), out var recoveredDamage))
+            if (TryRecoverAlternateDamage(d, checked((int)skill), recoveryStart, damageOrdinalPos, out var recoveredDamage))
                 damage = recoveredDamage;
         }
 
@@ -667,30 +672,27 @@ public sealed class PacketDispatcher
         return string.Join(",", parts);
     }
 
-    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, out ulong damage)
+    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, int recoveryStart, int ordinalPos, out ulong damage)
     {
         damage = 0;
-        // Short category-4 packets sometimes leave a hit ordinal in the generic
-        // slot and carry one or more base -> value pairs in the tail.
-        //
-        // Most verified short variants (Punishing Benediction, Desperate Strike,
-        // Poach, Vitality Evaporation, Vacuum Explosion, Corrode, Firestorm and
-        // charged Punishment) use the FINAL plausible pair for real damage.
-        //
-        // Water/Wind Spirit basic attacks are a proven exception: across multiple
-        // 2026-10-03/04 captures the first pair is 8751 -> 101 damage while the
-        // later pair carries non-damage metadata (e.g. 10600 -> 20/92 or
-        // 10360 -> 78). Preserve only the exact observed basic-attack IDs.
-        int start = Math.Max(0, d.Length - 18);
+        if (recoveryStart < 0 || ordinalPos <= recoveryStart || ordinalPos > d.Length) return false;
+
+        // Restrict recovery to the decoded damage-layout region: after the
+        // skill/damage-type header and before the tiny generic damage ordinal.
+        // This preserves verified alternate layouts (including 11125 -> 62
+        // Parry) while excluding both skill-ID bytes before the region and
+        // unrelated effect metadata after the ordinal.
+        int start = Math.Max(recoveryStart, ordinalPos - 18);
         ulong firstHit = 0;
         ulong lastHit = 0;
         bool found = false;
-        for (int i = start; i < d.Length; i++)
+        for (int i = start; i < ordinalPos; i++)
         {
             int p = i;
             if (!ReadV(d, ref p, out var first)) continue;
             if (first < 5_000 || first > 50_000) continue;
             if (!ReadV(d, ref p, out var hit)) continue;
+            if (p > ordinalPos) continue;
             if (hit < 20 || hit > 5_000_000) continue;
             if (!found) firstHit = hit;
             lastHit = hit;
@@ -698,13 +700,10 @@ public sealed class PacketDispatcher
         }
         if (!found) return false;
 
-        if (skill is 16990002 or 16990003)
-        {
-            damage = firstHit;
-            return true;
-        }
-
-        damage = lastHit;
+        // Water/Wind Spirit basic attacks are the only verified exception to
+        // taking the final pre-ordinal pair. Their earlier 8751 -> 101 pair is
+        // damage; the later pair is metadata (20/78/etc.).
+        damage = skill is 16990002 or 16990003 ? firstHit : lastHit;
         return true;
     }
 
