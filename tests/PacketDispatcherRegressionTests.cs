@@ -757,6 +757,13 @@ public sealed class PacketDispatcherRegressionTests
 
 
     [Theory]
+    [InlineData(1230115, "Attack")]
+    [InlineData(1230125, "Rush")]
+    [InlineData(1607630, "Attack")]
+    [InlineData(1607660, "Attack")]
+    [InlineData(1607670, "Attack")]
+    [InlineData(1607740, "Attack")]
+    [InlineData(3000017, "Theostone: Zikel's Vestige")]
     [InlineData(1216310, "Attack")]
     [InlineData(1217120, "Attack")]
     [InlineData(1220560, "Attack")]
@@ -878,6 +885,46 @@ public sealed class PacketDispatcherRegressionTests
             x.Contains("tag=unresolvedSummonCandidate|actor=84336", StringComparison.Ordinal));
         Assert.DoesNotContain(records, x =>
             x.Contains("tag=summonDamage|summon=84336", StringComparison.Ordinal));
+    }
+
+
+    [Fact]
+    public void KnownMob_VisibilityRemoval_DoesNotDropNpcIdentity()
+    {
+        // Exact known-mob spawn + attack fixture from the 2026-10-04 captures.
+        // The removal packet uses the same 21 8D layout as Furious Feruk's live
+        // visibility removal. Known mobs must remain NPCs until a new generation
+        // is proven by a spawn or trusted player identity.
+        const string spawnHex = "A00141368BFA041F00004B8E2C004002095C9AC74BAF04C800ED0D47E6CD0A43B56201FA67FA67CD0E0000CD0E00000000000000000000000000003CB8010064000000F04902000100000000000000A08601000000000050A50500010201110181969800FFFFFFFFFFFFFFFF8075D52ABB0300008BFA040102095C9AC74BAF04C800ED0D47070206F52C000002CD00D0020000D0003B0100002D00000000";
+        const string removedHex = "0B218D8BFA040000";
+        const string damageHex = "220438DD9D0104008BFA048327E9000202376F135B010000009E55D6070100";
+
+        var dispatcher = new PacketDispatcher(DamageAndMobProfile());
+        _ = dispatcher.Dispatch(Convert.FromHexString(spawnHex), DateTime.UnixEpoch).ToList();
+        var removed = dispatcher.Dispatch(Convert.FromHexString(removedHex), DateTime.UnixEpoch.AddMilliseconds(10)).ToList();
+        var events = dispatcher.Dispatch(Convert.FromHexString(damageHex), DateTime.UnixEpoch.AddSeconds(1)).ToList();
+
+        Assert.DoesNotContain(removed, x => x.Kind == CombatKind.Despawn);
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(81163, hit.SourceId);
+        Assert.Equal("NPC", hit.SourceClass);
+        Assert.False(hit.Source.StartsWith("Actor ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Skill3000017_PublicEnglishResource_UsesExactName()
+    {
+        // Exact monster-log packet from confirmed Assassin Antakito/entity 2546.
+        const string hex = "230438DB490600F213D1C62D000902000001AFA9E11101000000865DD6080100";
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(2546, hit.SourceId);
+        Assert.Equal(9435, hit.TargetId);
+        Assert.Equal(1110, hit.Amount);
+        Assert.Equal(DamageType.Back, hit.DamageType);
+        Assert.Equal("Theostone: Zikel's Vestige", hit.Skill);
     }
 
 }
