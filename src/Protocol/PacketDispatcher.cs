@@ -550,9 +550,20 @@ public sealed class PacketDispatcher
         identities[globalId] = identity;
         globalPlayerNames[globalId] = name;
 
+        // If this trusted identity is the current local session actor and a
+        // validated 20 36 header already linked that session to a stable/global
+        // character id, learn the stable identity too. This is what allows a
+        // later zone/session change to resolve back to the same character.
+        if (globalId == selfEntityId && sessionToGlobal.TryGetValue(globalId, out var stableGlobal) && stableGlobal > 0)
+        {
+            identities[stableGlobal] = identity;
+            globalPlayerNames[stableGlobal] = name;
+            ValidationRecord?.Invoke($"{utc:O}|tag=sessionPromotedGlobal|session={globalId}|global={stableGlobal}|name={name}|class={resolvedClass}|source={source}");
+        }
+
         // A 20 36 packet can link the stable/global character id to the
         // short-lived combat/session id. Names may arrive before or after that
-        // link, so promote in both directions whenever either side becomes known.
+        // link, so promote global -> session whenever the stable side is known.
         foreach (var link in sessionToGlobal.Where(x => x.Value == globalId).ToArray())
         {
             identities[link.Key] = identity;
@@ -1023,10 +1034,22 @@ public sealed class PacketDispatcher
         else if (globalPlayerNames.TryGetValue(globalId, out var globalName) && !string.IsNullOrWhiteSpace(globalName))
             known = new PlayerIdentity(globalName, "Unknown");
 
+        // The live 2026-10-04 sequence proves the same stable id can appear
+        // behind different local session ids across a transition. If the old
+        // session is already the trusted local player, seed the stable id now
+        // so the next session can resolve immediately.
+        if (known is null && session == selfEntityId && identities.TryGetValue(session, out var localIdentity))
+        {
+            known = localIdentity;
+            identities[globalId] = localIdentity;
+            globalPlayerNames[globalId] = localIdentity.Name;
+            ValidationRecord?.Invoke($"{utc:O}|tag=sessionPromotedGlobal|session={session}|global={globalId}|name={localIdentity.Name}|class={localIdentity.ClassName}|source=globalSessionLink");
+        }
+
         if (known is null || string.IsNullOrWhiteSpace(known.Name)) return null;
         identities[session] = known;
         ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={known.Name}|class={known.ClassName}");
-        return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0);
+        return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0,known.ClassName);
     }
 
     private void TraceExtendedIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
