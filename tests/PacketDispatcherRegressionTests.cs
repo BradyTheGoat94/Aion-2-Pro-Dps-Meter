@@ -127,6 +127,7 @@ public sealed class PacketDispatcherRegressionTests
 
         Assert.Equal("KnownPlayer", resolved.Source);
         Assert.Equal("Templar", resolved.SourceClass);
+        Assert.True(resolved.SourceIdentityConfirmed);
     }
 
 
@@ -453,6 +454,48 @@ public sealed class PacketDispatcherRegressionTests
         Assert.Equal("Ranger", row.ClassName);
         Assert.Equal(480, row.Damage);
         Assert.Equal(480, resolved.FightDamage);
+    }
+
+
+    [Fact]
+    public void CombatEngine_TrustedResolvedDamage_PromotesEarlierHiddenDamage()
+    {
+        var now = DateTime.UnixEpoch;
+        var engine = new CombatEngine(() => now);
+
+        // Mirrors the 2026-10-04 live entity 6456 sequence: five hits arrive as
+        // Actor 6456 (2862 total), then the protocol/capture layer resolves the
+        // same entity as ThotHokage without requiring a separate PlayerName event.
+        foreach (var amount in new long[] { 206, 344, 1574, 344, 394 })
+        {
+            engine.Apply(new CombatEvent(
+                Utc: now, Kind: CombatKind.Damage,
+                SourceId: 6456, Source: "Actor 6456",
+                TargetId: 76938, Target: "Target 76938",
+                Skill: "Observed hit", Amount: amount,
+                DamageType: DamageType.Direct));
+            now = now.AddMilliseconds(100);
+        }
+
+        var hidden = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        Assert.Empty(hidden.Players);
+        Assert.Equal(0, hidden.FightDamage);
+
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.Damage,
+            SourceId: 6456, Source: "ThotHokage",
+            TargetId: 67081, Target: "Target 67081",
+            Skill: "Onslaught", Amount: 406,
+            DamageType: DamageType.Direct,
+            SourceIdentityConfirmed: true));
+
+        var promoted = engine.Snapshot(MeterSegment.Current, MeterCategory.Damage);
+        var row = Assert.Single(promoted.Players);
+        Assert.Equal("ThotHokage", row.Name);
+        Assert.Equal(3268, row.Damage);
+        Assert.Equal(3268, promoted.FightDamage);
+        Assert.All(promoted.RecentEvents.Where(x => x.Kind == CombatKind.Damage && x.SourceId == 6456),
+            x => Assert.Equal("ThotHokage", x.Source));
     }
 
 }

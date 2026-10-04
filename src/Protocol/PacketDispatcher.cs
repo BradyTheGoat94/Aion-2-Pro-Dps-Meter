@@ -216,11 +216,12 @@ public sealed class PacketDispatcher
             actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
                 ? knownIdentity.ClassName : ClassFromSkill(skill);
         }
+        bool sourceIdentityConfirmed = !mobs.ContainsKey(actorId) && identities.ContainsKey(actorId);
         var targetName = ResolveTargetName(targetId);
         long currentHp = 0, maxHp = 0;
         if (mobs.TryGetValue(targetId, out var mobState)) { currentHp = mobState.CurrentHp; maxHp = mobState.MaxHp; }
         return new(CombatKind.Damage, actorId, actorName, targetId, targetName,
-            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass, dflags);
+            SkillName(checked((int)skill)), (long)damage, dtype, currentHp,maxHp,"",0, actorClass, dflags, sourceIdentityConfirmed);
     }
 
     private Aion2Decoded? TryDot(ReadOnlySpan<byte> d, int p, DateTime utc)
@@ -256,8 +257,9 @@ public sealed class PacketDispatcher
             actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
                 ? knownIdentity.ClassName : ClassFromSkill((int)skill);
         }
+        bool sourceIdentityConfirmed = !mobs.ContainsKey(actorId) && identities.ContainsKey(actorId);
         return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveTargetName(targetId),
-            SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
+            SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass, DamageFlags.None, sourceIdentityConfirmed);
     }
 
     private void TryRegisterSummonOwner(ReadOnlySpan<byte> d, int p, DateTime utc)

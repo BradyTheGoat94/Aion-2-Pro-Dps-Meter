@@ -41,7 +41,7 @@ public sealed class CombatEngine
                 }
                 else if (e.Kind == CombatKind.Ownership && e.SourceId != 0 && e.OwnerId != 0 && e.SourceId != e.OwnerId)
                     owners[e.SourceId] = e.OwnerId;
-                else if (e.SourceId != 0) Remember(e.SourceId, e.Source, e.SourceClass,e.Kind==CombatKind.PlayerName);
+                else if (e.SourceId != 0) Remember(e.SourceId, e.Source, e.SourceClass,e.Kind==CombatKind.PlayerName || e.SourceIdentityConfirmed);
                 if (e.TargetId != 0) Remember(e.TargetId, e.Target, "Unknown");
                 bool activity = (e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0 || e.Kind == CombatKind.CombatStart;
                 if (activity)
