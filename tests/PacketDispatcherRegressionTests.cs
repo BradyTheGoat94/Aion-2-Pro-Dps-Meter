@@ -605,7 +605,9 @@ public sealed class PacketDispatcherRegressionTests
         Assert.DoesNotContain(damage.Players, x => x.EntityId == 105 || x.EntityId == 901);
 
         var taken = engine.Snapshot(MeterSegment.Current, MeterCategory.DamageTaken);
-        Assert.Equal(10500, taken.Players.Sum(x => x.Damage));
+        // Damage Taken is evidence-preserving: confirmed player damage, unresolved
+        // combat, and hostile NPC damage all remain visible by target.
+        Assert.Equal(15500, taken.Players.Sum(x => x.Damage));
 
         // Late trusted identity promotes the already-captured unresolved 5000
         // without replaying it or affecting NPC exclusion.
