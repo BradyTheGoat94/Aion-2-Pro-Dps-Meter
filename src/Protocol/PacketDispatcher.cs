@@ -91,14 +91,15 @@ public sealed class PacketDispatcher
         TraceCombatIdentityCandidates(frame, utc);
         TraceExtendedIdentityCandidates(frame, utc);
 
-        // Only accept 20 36 when it is the frame's actual opcode immediately
-        // after the leading varint. Fresh captures contain incidental 20 36 byte
-        // sequences inside unrelated packets, which must never create ID links.
+        // 20 36 is NOT identity-verified. The 2026-10-04 live capture proved
+        // that a structurally similar frame can carry compressed UTF-16 user
+        // settings (WorldMapFilterSetting, MiniMapFilterSetting, etc.). The old
+        // heuristic interpreted its header as session=9640/global=304076.
+        // Keep the frame for diagnostics, but never create an identity link until
+        // a real combat-id -> character-id layout is proven by controlled capture.
         if (a == 0x20 && b == 0x36)
         {
-            var sessionLink = TryGlobalSessionLink(frame, p, utc);
-            if (sessionLink is not null)
-                yield return sessionLink;
+            ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionRejected|reason=unverified-2036-layout|compressedPayload={ContainsZlibPayload(frame,p+2)}|frameLen={frame.Length}|raw={Convert.ToHexString(frame)}");
             yield break;
         }
 
@@ -1001,32 +1002,15 @@ public sealed class PacketDispatcher
         }
     }
 
-    private Aion2Decoded? TryGlobalSessionLink(ReadOnlySpan<byte> d, int tagOffset, DateTime utc)
+    private static bool ContainsZlibPayload(ReadOnlySpan<byte> d, int start)
     {
-        int p = tagOffset + 2;
-        if (p + 2 > d.Length) return null;
-        p += 2;
-        if (!ReadV(d, ref p, out var rawSession) || rawSession == 0 || rawSession > long.MaxValue) return null;
-        if (p + 8 > d.Length) return null;
-        p += 4;
-        uint global = (uint)(d[p] | (d[p+1] << 8) | (d[p+2] << 16) | (d[p+3] << 24));
-        if (global == 0) return null;
-        long session = (long)rawSession;
-        long globalId = global;
-        sessionToGlobal[session] = globalId;
-        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionLink|session={session}|global={globalId}|offset={tagOffset}|raw={Convert.ToHexString(d)}");
-        PlayerIdentity? known = null;
-        if (identities.TryGetValue(globalId, out var direct))
-            known = direct;
-        else if (partyIdentities.TryGetValue(globalId, out var party))
-            known = party;
-        else if (globalPlayerNames.TryGetValue(globalId, out var globalName) && !string.IsNullOrWhiteSpace(globalName))
-            known = new PlayerIdentity(globalName, "Unknown");
-
-        if (known is null || string.IsNullOrWhiteSpace(known.Name)) return null;
-        identities[session] = known;
-        ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={known.Name}|class={known.ClassName}");
-        return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0);
+        int end = Math.Min(d.Length - 1, Math.Max(start, 0) + 96);
+        for (int i = Math.Max(0, start); i < end; i++)
+        {
+            if (d[i] == 0x78 && (d[i + 1] == 0x01 || d[i + 1] == 0x5E || d[i + 1] == 0x9C || d[i + 1] == 0xDA))
+                return true;
+        }
+        return false;
     }
 
     private void TraceExtendedIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
