@@ -50,11 +50,15 @@ public sealed class PacketDispatcher
             yield break;
         }
 
-var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
-        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
-
+// Trace identity evidence before rejecting unknown opcodes. Several lifecycle
+        // packets are intentionally not combat tags, but can carry the missing
+        // session/global relationship needed to resolve Actor #### rows.
         TraceIdentityLifecycle(frame, utc);
         TraceGlobalSessionCandidates(frame, utc);
+        TraceCombatIdentityCandidates(frame, utc);
+
+        var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key;
+        if (kind is null) { Diagnostic?.Invoke(new(utc,"dispatch",$"Unknown tag 0x{a:X2}{b:X2}",frame.Length)); yield break; }
         var embeddedLink = TryEmbeddedGlobalSessionLink(frame, utc);
         if (embeddedLink is not null)
             yield return embeddedLink;
@@ -900,6 +904,22 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
             if (d[i] == 0x20 && d[i + 1] == 0x36)
                 return TryGlobalSessionLink(d, i, utc);
         return null;
+    }
+
+    private void TraceCombatIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
+    {
+        if (recentCombatEntityIds.Count == 0 || d.Length < 4) return;
+        var hits = FindCombatIdEncodings(d);
+        if (string.IsNullOrWhiteSpace(hits)) return;
+
+        int p = 0;
+        if (!ReadV(d, ref p, out _) || p + 1 >= d.Length) return;
+        byte a = d[p], b = d[p + 1];
+
+        // Damage and DOT packets already log explicit source/target IDs.
+        if ((a == 0x04 && b == 0x38) || (a == 0x05 && b == 0x38)) return;
+
+        ValidationRecord?.Invoke($"{utc:O}|tag=combatIdentityCandidate|opcode={a:X2}{b:X2}|combatIdHits={hits}|strings={DescribeBridgeStrings(d,0)}|frameLen={d.Length}|raw={Convert.ToHexString(d)}");
     }
 
     private void TraceIdentityLifecycle(ReadOnlySpan<byte> d, DateTime utc)
