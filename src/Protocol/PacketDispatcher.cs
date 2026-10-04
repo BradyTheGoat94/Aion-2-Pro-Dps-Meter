@@ -125,7 +125,7 @@ public sealed class PacketDispatcher
             "damage" => TryDamage(frame, p+2, utc),
             "dot" => TryDot(frame, p+2, utc),
             "bossHp" => TryBossHp(frame, p+2, utc),
-            "entityRemoved" => RemoveEntity(frame, p+2),
+            "entityRemoved" => RemoveEntity(frame, p+2, utc),
             "selfInfo" => ObserveSelfIdentity(frame, p+2, utc),
             "otherInfo" => ObserveIdentity(frame, p+2, utc, "otherInfo"),
             "charLookup" => TryCharacterLookup(frame, p+2, utc),
@@ -136,12 +136,12 @@ public sealed class PacketDispatcher
         else Diagnostic?.Invoke(new(utc,"dispatch",$"Matched {kind}; no validated event emitted",frame.Length));
     }
 
-    private Aion2Decoded? RemoveEntity(ReadOnlySpan<byte> frame,int p)
+    private Aion2Decoded? RemoveEntity(ReadOnlySpan<byte> frame,int p,DateTime utc)
     {
         if(!ReadV(frame,ref p,out var value) || value==0 || value>long.MaxValue)return null;
         long id=(long)value;
         if (unresolvedSummonCandidates.TryGetValue(id, out var unresolved))
-            ValidationRecord?.Invoke($"{DateTime.UtcNow:O}|tag=unresolvedSummonLifecycle|actor={id}|event=entityRemoved|hits={unresolved.Hits}|first={unresolved.FirstSeen:O}|last={unresolved.LastSeen:O}|skills={string.Join(",", unresolved.Skills)}");
+            ValidationRecord?.Invoke($"{utc:O}|tag=unresolvedSummonLifecycle|actor={id}|event=entityRemoved|hits={unresolved.Hits}|first={unresolved.FirstSeen:O}|last={unresolved.LastSeen:O}|skills={string.Join(",", unresolved.Skills)}");
         // Captures show this removal for named players and confirmed summons
         // that continue participating seconds later. Treat it as a visibility
         // removal, not proof that the entity generation ended. A later spawn
@@ -421,7 +421,9 @@ public sealed class PacketDispatcher
 
     private void TraceUnresolvedSummonCandidate(long actorId, long targetId, int skill, string skillName, DateTime utc, ReadOnlySpan<byte> d)
     {
-        if (actorId <= 0 || summonOwners.ContainsKey(actorId) || identities.ContainsKey(actorId) || mobs.ContainsKey(actorId))
+        if (actorId <= 0 || summonOwners.ContainsKey(actorId) || identities.ContainsKey(actorId))
+            return;
+        if (mobs.ContainsKey(actorId) && !confirmedSummons.Contains(actorId))
             return;
         if (!IsSummonExclusiveSkill(skill, skillName))
             return;
@@ -438,7 +440,7 @@ public sealed class PacketDispatcher
         TrimRecentSummonSpawns(utc);
         string nearby = string.Join(",", recentSummonSpawns
             .Where(x => Math.Abs((utc - x.Utc).TotalSeconds) <= 8)
-            .Select(x => $"{x.SummonId}->{(x.OwnerId > 0 ? x.OwnerId.ToString() : "?")}@{(int)(utc - x.Utc).TotalMilliseconds}ms")
+            .Select(x => $"{x.SummonId}->{(x.OwnerId > 0 ? x.OwnerId.ToString() : "?")}@{(int)(utc - x.Utc).TotalMilliseconds}ms[{x.ParentCandidates}]")
             .Take(12));
         if (string.IsNullOrWhiteSpace(nearby)) nearby = "none";
 
