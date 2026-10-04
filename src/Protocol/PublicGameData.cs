@@ -126,6 +126,7 @@ internal static class PublicGameData
         ["고결한 기운"] = "Noble Aura",
         ["치유의 기운"] = "Healing Aura",
         ["속박"] = "Root",
+        ["당겨짐"] = "Pulled",
         ["구원"] = "Salvation",
         ["권능 폭발"] = "Power Burst",
         ["면죄"] = "Absolution",
