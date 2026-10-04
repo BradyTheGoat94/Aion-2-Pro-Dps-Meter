@@ -23,3 +23,5 @@ jobs:
         run: dotnet restore tests/Regression.csproj
       - name: Run legacy combat regression runner
         run: dotnet run --project tests/Regression.csproj --configuration Release --no-restore
+      - name: Run overlay smoke checks
+        run: dotnet run --project tests/OverlaySmoke/OverlaySmoke.csproj --configuration Release
