@@ -580,7 +580,7 @@ public sealed class PacketDispatcher
         int nameOffset = -1;
         if (TryReadStructuredCharacterName(d, start, out var structuredName, out nameOffset))
             best = structuredName;
-        if (string.IsNullOrWhiteSpace(best) || best.Length < 3) { var failedCandidates = DescribeIdentityCandidates(d, start);
+        if (string.IsNullOrWhiteSpace(best) || best.Length < 2) { var failedCandidates = DescribeIdentityCandidates(d, start);
         Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={failedCandidates}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name=|idCandidates={failedCandidates}|raw={Convert.ToHexString(d)}"); return null; }
         int jobCode = 0;
@@ -761,7 +761,7 @@ public sealed class PacketDispatcher
             // identical and prevents arbitrary strings from becoming identities.
             if (d[i] != 0x07 && d[i] != 0x17) continue;
             int len = d[i + 1];
-            if (len < 3 || len > 24 || i + 2 + len > d.Length) continue;
+            if (len < 2 || len > 24 || i + 2 + len > d.Length) continue;
             var bytes = d.Slice(i + 2, len);
             bool valid = true;
             for (int j = 0; j < bytes.Length; j++)
@@ -863,7 +863,7 @@ public sealed class PacketDispatcher
         for (int i = p; i < end; i++)
         {
             int len = d[i];
-            if (len < 3 || len > 24 || i + 1 + len > d.Length) continue;
+            if (len < 2 || len > 24 || i + 1 + len > d.Length) continue;
             bool valid = true;
             for (int j = 0; j < len; j++)
             {
