@@ -134,7 +134,10 @@ var kind = profile.Tags.FirstOrDefault(kv => kv.Value.A==a && kv.Value.B==b).Key
         if (!ReadV(d, ref p, out _)) return null;
         if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;
 
-        if (damage <= 4)
+        // Some multi-hit packets put the hit ordinal (1..5) in the generic
+        // damage slot. Recover only when the packet tail also contains the
+        // validated stable/base -> real-hit pair.
+        if (damage <= 5)
         {
             if (TryRecoverAlternateDamage(d, out var recoveredDamage))
                 damage = recoveredDamage;
