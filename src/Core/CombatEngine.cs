@@ -124,16 +124,23 @@ public sealed class CombatEngine
         while(encounter.Events.Count > 2000) encounter.Events.Dequeue();
         if ((e.Kind is CombatKind.Damage or CombatKind.Heal) && e.Amount > 0)
         {
+            // A2Meter keeps MobSpawn identities in its name cache but does not
+            // present those actors as player DPS rows. Preserve NPC damage for
+            // Damage Taken/history while excluding it from player Damage/Healing.
+            bool npcSource = string.Equals(e.SourceClass, "NPC", StringComparison.OrdinalIgnoreCase);
             var category = e.Kind == CombatKind.Damage ? MeterCategory.Damage : MeterCategory.Healing;
-            Add(encounter, source, category, e);
+            if (!npcSource) Add(encounter, source, category, e);
             if (e.Kind == CombatKind.Damage) Add(encounter, targetId, MeterCategory.DamageTaken, e);
             if (encounter.LastActivity.HasValue)
                 encounter.ActiveSeconds += Math.Min(5, Math.Max(0, (t-encounter.LastActivity.Value).TotalSeconds));
             encounter.LastActivity=t;
-            if(encounter.ActorLast.TryGetValue(source,out var previous))
-                encounter.ActorActive[source]=encounter.ActorActive.GetValueOrDefault(source)+Math.Min(5,Math.Max(0,(t-previous).TotalSeconds));
-            encounter.ActorLast[source]=t;
-            if (e.Kind == CombatKind.Damage && e.TargetId != 0)
+            if (!npcSource)
+            {
+                if(encounter.ActorLast.TryGetValue(source,out var previous))
+                    encounter.ActorActive[source]=encounter.ActorActive.GetValueOrDefault(source)+Math.Min(5,Math.Max(0,(t-previous).TotalSeconds));
+                encounter.ActorLast[source]=t;
+            }
+            if (!npcSource && e.Kind == CombatKind.Damage && e.TargetId != 0)
             {
                 encounter.TargetDamage.TryGetValue(e.TargetId, out var damage);
                 encounter.TargetDamage[e.TargetId] = damage + e.Amount;
