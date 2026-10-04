@@ -1,0 +1,64 @@
+name: Research Aion2Flow skill 3000020
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lookup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout public Aion2Flow data
+        run: git clone --depth 1 https://github.com/cloris-chan/Aion2Flow.git /tmp/Aion2Flow
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install LZ4
+        run: python -m pip install lz4
+      - name: Decode English skill-name resource
+        shell: bash
+        run: |
+          python - <<'PY'
+          import struct
+          from pathlib import Path
+          import lz4.block
+
+          path=Path('/tmp/Aion2Flow/src/Aion2Flow.Resources/Packs/en-US.bin')
+          data=path.read_bytes()
+          pack_magic,version,kind,reserved,uncompressed_len,checksum,compressed_len=struct.unpack_from('<IHBBiQi',data,0)
+          assert pack_magic==0x50523241, hex(pack_magic)
+          assert version==14, version
+          assert kind==2, kind
+          compressed=data[24:24+compressed_len]
+          payload=lz4.block.decompress(compressed,uncompressed_size=uncompressed_len)
+          payload_magic,payload_version=struct.unpack_from('<IH',payload,0)
+          assert payload_magic==0x44523241, hex(payload_magic)
+          assert payload_version==14, payload_version
+          section_count=struct.unpack_from('<i',payload,6)[0]
+          pos=10
+          headers=[]
+          for _ in range(section_count):
+              sid,count,length,section_checksum=struct.unpack_from('<HiiQ',payload,pos)
+              pos+=18
+              headers.append((sid,count,length))
+          data_pos=pos
+          target=None
+          for sid,count,length in headers:
+              section=payload[data_pos:data_pos+length]
+              data_pos+=length
+              if sid!=101:
+                  continue
+              p=0
+              for _ in range(count):
+                  skill_id,name_len=struct.unpack_from('<ii',section,p)
+                  p+=8
+                  encoded=section[p:p+name_len]
+                  p+=name_len
+                  name=bytes(b^0x22 for b in encoded).decode('utf-8')
+                  if skill_id==3000020:
+                      target=name
+                      break
+          print(f'AION2FLOW_EN_SKILL_3000020={target!r}')
+          if target is None:
+              raise SystemExit('Skill 3000020 not present in English skill-name section')
+          PY
