@@ -137,6 +137,9 @@ public sealed class PacketDispatcherRegressionTests
         var engine = new CombatEngine(() => now);
 
         engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName, SourceId: 77,
+            Source: "Tester", SourceClass: "Templar"));
+        engine.Apply(new CombatEvent(
             Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
             TargetId: 900, Target: "Training Target", Skill: "Strike",
             Amount: 8000, DamageType: DamageType.Direct));
@@ -163,6 +166,9 @@ public sealed class PacketDispatcherRegressionTests
         var now = DateTime.UnixEpoch;
         var engine = new CombatEngine(() => now);
 
+        engine.Apply(new CombatEvent(
+            Utc: now, Kind: CombatKind.PlayerName, SourceId: 77,
+            Source: "Tester", SourceClass: "Templar"));
         engine.Apply(new CombatEvent(
             Utc: now, Kind: CombatKind.Damage, SourceId: 77, Source: "Tester",
             TargetId: 901, Target: "Boss", Skill: "Strike", Amount: 4000,
