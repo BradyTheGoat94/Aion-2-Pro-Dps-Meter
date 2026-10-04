@@ -89,6 +89,7 @@ public sealed class PacketDispatcher
         TraceIdentityLifecycle(frame, utc);
         TraceGlobalSessionCandidates(frame, utc);
         TraceCombatIdentityCandidates(frame, utc);
+        TraceExtendedIdentityCandidates(frame, utc);
 
         // Only accept 20 36 when it is the frame's actual opcode immediately
         // after the leading varint. Fresh captures contain incidental 20 36 byte
@@ -202,9 +203,19 @@ public sealed class PacketDispatcher
             actorId = ownerId;
             ValidationRecord?.Invoke($"{utc:O}|tag=summonDamage|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={damage}");
         }
-        var actorName = ResolveName(actorId, "Actor");
-        var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
-            ? knownIdentity.ClassName : ClassFromSkill(skill);
+        string actorName;
+        string actorClass;
+        if (mobs.TryGetValue(actorId, out var sourceMob))
+        {
+            actorName = sourceMob.Name;
+            actorClass = "NPC";
+        }
+        else
+        {
+            actorName = ResolveName(actorId, "Actor");
+            actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
+                ? knownIdentity.ClassName : ClassFromSkill(skill);
+        }
         var targetName = ResolveTargetName(targetId);
         long currentHp = 0, maxHp = 0;
         if (mobs.TryGetValue(targetId, out var mobState)) { currentHp = mobState.CurrentHp; maxHp = mobState.MaxHp; }
@@ -232,9 +243,19 @@ public sealed class PacketDispatcher
             actorId = ownerId;
             ValidationRecord?.Invoke($"{utc:O}|tag=summonDot|summon={originalActorId}|owner={ownerId}|skill={SkillName(checked((int)skill))}|amount={(damage>0?damage:(long)heal)}");
         }
-        var actorName = ResolveName(actorId, "Actor");
-        var actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
-            ? knownIdentity.ClassName : ClassFromSkill((int)skill);
+        string actorName;
+        string actorClass;
+        if (mobs.TryGetValue(actorId, out var sourceMob))
+        {
+            actorName = sourceMob.Name;
+            actorClass = "NPC";
+        }
+        else
+        {
+            actorName = ResolveName(actorId, "Actor");
+            actorClass = identities.TryGetValue(actorId, out var knownIdentity) && knownIdentity.ClassName != "Unknown"
+                ? knownIdentity.ClassName : ClassFromSkill((int)skill);
+        }
         return new(damage>0?CombatKind.Damage:CombatKind.Heal, actorId,actorName,targetId,ResolveTargetName(targetId),
             SkillName(checked((int)skill)), damage>0?damage:(long)heal, DamageType.Dot,0,0,"",0, actorClass);
     }
@@ -551,13 +572,44 @@ public sealed class PacketDispatcher
         if (string.IsNullOrWhiteSpace(best) || best.Length < 3) { var failedCandidates = DescribeIdentityCandidates(d, start);
         Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} no validated name idCandidates={failedCandidates}",d.Length));
         ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name=|idCandidates={failedCandidates}|raw={Convert.ToHexString(d)}"); return null; }
-        RememberGlobalPlayerIdentity(id, best, "Unknown", utc, packetKind);
-        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped entity {id} -> {best}",d.Length));
+        int jobCode = 0;
+        int serverId = 0;
+        string className = "Unknown";
+        if (nameOffset >= 0)
+        {
+            int afterName = nameOffset + 2 + d[nameOffset + 1];
+            int q = afterName;
+            if (q < d.Length && ReadV(d, ref q, out var jobU) && jobU >= 5 && jobU <= 40)
+            {
+                jobCode = (int)jobU;
+                className = ClassFromJobCode(jobCode);
+            }
+            serverId = FindLikelyServerId(d, afterName);
+        }
+        RememberGlobalPlayerIdentity(id, best, className, utc, packetKind);
+        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped entity {id} -> {best} class={className} job={jobCode} server={serverId}",d.Length));
         var idCandidates = DescribeIdentityCandidates(d, start);
-        Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best} idCandidates={idCandidates}",d.Length));
-        ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|nameOffset={nameOffset}|idCandidates={idCandidates}|bridgeFields={DescribeBridgeFields(d,start)}|bridgeStrings={DescribeBridgeStrings(d,start)}|combatIdHits={FindCombatIdEncodings(d)}|raw={Convert.ToHexString(d)}");
-        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|source={packetKind}");
-        return new(CombatKind.PlayerName,id,best,0,"","",0,DamageType.Unknown,0,0,"",0);
+        Diagnostic?.Invoke(new(utc,"identity",$"{packetKind} id={id} name={best} class={className} job={jobCode} server={serverId} idCandidates={idCandidates}",d.Length));
+        ValidationRecord?.Invoke($"{utc:O}|tag=identity|packet={packetKind}|id={id}|name={best}|class={className}|jobCode={jobCode}|server={serverId}|nameOffset={nameOffset}|idCandidates={idCandidates}|bridgeFields={DescribeBridgeFields(d,start)}|bridgeStrings={DescribeBridgeStrings(d,start)}|combatIdHits={FindCombatIdEncodings(d)}|raw={Convert.ToHexString(d)}");
+        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|class={className}|jobCode={jobCode}|server={serverId}|source={packetKind}");
+        return new(CombatKind.PlayerName,id,best,0,"","",0,DamageType.Unknown,0,0,"",0,className);
+    }
+
+    private static int FindLikelyServerId(ReadOnlySpan<byte> d, int afterName)
+    {
+        // Mirrors the current public A2Meter UserInfo parser: the server id is
+        // carried later in the same player-info packet rather than next to the
+        // combat entity id. Keep this metadata-only; names remain keyed by the
+        // explicit packet entity id.
+        int scanStart = Math.Min(afterName + 75, d.Length);
+        int scanEnd = Math.Min(afterName + 108, d.Length) - 1;
+        for (int i = scanStart; i < scanEnd; i++)
+        {
+            int sid = d[i] | (d[i + 1] << 8);
+            if (sid >= 1001 && sid <= 2999)
+                return sid;
+        }
+        return 0;
     }
 
     private static string DescribeIdentityCandidates(ReadOnlySpan<byte> d, int start)
@@ -817,12 +869,30 @@ public sealed class PacketDispatcher
             ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name=|status=no-name|raw={Convert.ToHexString(d)}");
             return null;
         }
+        int serverId = 0;
+        int jobCode = 0;
+        int extra = -1;
+        string className = "Unknown";
+        int afterName = nameOffset >= 0 ? nameOffset + 1 + d[nameOffset] : -1;
+        if (afterName >= 0 && afterName + 7 <= d.Length)
+        {
+            int sid = d[afterName] | (d[afterName + 1] << 8);
+            int job = d[afterName + 2] | (d[afterName + 3] << 8) | (d[afterName + 4] << 16) | (d[afterName + 5] << 24);
+            int extraByte = d[afterName + 6];
+            if (sid >= 1001 && sid <= 2999 && job >= 5 && job <= 40 && extraByte <= 2)
+            {
+                serverId = sid;
+                jobCode = job;
+                extra = extraByte;
+                className = ClassFromJobCode(jobCode);
+            }
+        }
         selfEntityId=id;
-        RememberGlobalPlayerIdentity(id, best, "Unknown", utc, "selfInfo");
-        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped self entity {id} -> {best}",d.Length));
-        ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name={best}|nameOffset={nameOffset}|raw={Convert.ToHexString(d)}");
-        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|source=selfInfo");
-        return new(CombatKind.PlayerName, id, best, 0, "", "", 0, DamageType.Unknown, 0,0,"",0);
+        RememberGlobalPlayerIdentity(id, best, className, utc, "selfInfo");
+        Diagnostic?.Invoke(new(utc,"identity-map",$"Mapped self entity {id} -> {best} class={className} job={jobCode} server={serverId}",d.Length));
+        ValidationRecord?.Invoke($"{utc:O}|tag=selfIdentity|entity={id}|name={best}|class={className}|jobCode={jobCode}|server={serverId}|extra={extra}|nameOffset={nameOffset}|raw={Convert.ToHexString(d)}");
+        ValidationRecord?.Invoke($"{utc:O}|tag=identityMap|entity={id}|name={best}|class={className}|jobCode={jobCode}|server={serverId}|source=selfInfo");
+        return new(CombatKind.PlayerName, id, best, 0, "", "", 0, DamageType.Unknown, 0,0,"",0,className);
     }
 
     private IEnumerable<Aion2Decoded> TryObservePartyIdentities(byte[] d, int start, DateTime utc, byte opcode)
@@ -957,6 +1027,23 @@ public sealed class PacketDispatcher
         identities[session] = known;
         ValidationRecord?.Invoke($"{utc:O}|tag=globalSessionName|session={session}|global={globalId}|name={known.Name}|class={known.ClassName}");
         return new(CombatKind.PlayerName,session,known.Name,0,"","",0,DamageType.Unknown,0,0,"",0);
+    }
+
+    private void TraceExtendedIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
+    {
+        if (recentCombatEntityIds.Count == 0 || d.Length < 8) return;
+        var hits = FindCombatIdEncodings(d);
+        if (string.IsNullOrWhiteSpace(hits)) return;
+        if (!TryReadStructuredCharacterName(d, 0, out var name, out var nameOffset)) return;
+
+        int afterName = nameOffset + 2 + d[nameOffset + 1];
+        int q = afterName;
+        if (!ReadV(d, ref q, out var jobU) || jobU < 5 || jobU > 40) return;
+
+        int p = 0;
+        if (!ReadV(d, ref p, out _) || p + 1 >= d.Length) return;
+        byte a = d[p], b = d[p + 1];
+        ValidationRecord?.Invoke($"{utc:O}|tag=extendedIdentityCandidate|opcode={a:X2}{b:X2}|combatIdHits={hits}|name={name}|jobCode={(int)jobU}|class={ClassFromJobCode((int)jobU)}|server={FindLikelyServerId(d, afterName)}|raw={Convert.ToHexString(d)}");
     }
 
     private void TraceCombatIdentityCandidates(ReadOnlySpan<byte> d, DateTime utc)
