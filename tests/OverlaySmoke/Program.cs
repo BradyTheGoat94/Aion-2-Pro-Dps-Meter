@@ -23,7 +23,8 @@ internal static class Program
   foreach(var style in new[]{"Details Inspired","Kagerou Inspired","Bars Only","Raid Compact","Glass Cards","Tournament","Classic Dashboard"})Invoke("ApplyOverlayStyle",style);
   if(((FrameworkElement)window.FindName("ToolbarGrid")).Visibility!=Visibility.Visible)throw new Exception("Classic did not restore toolbar");
   var t=DateTime.UtcNow;var engine=new CombatEngine(()=>t);
-  engine.Apply(new(t,CombatKind.Damage,1,"Player",2,"Target","Strike",100));
+  engine.Apply(new(t,CombatKind.PlayerName,1,"Player",SourceClass:"Templar"));
+  engine.Apply(new(t,CombatKind.Damage,1,"Player",2,"Target","Strike",100,SourceClass:"Templar"));
   window.SnapshotProvider=(segment,category)=>engine.Snapshot(segment,category);
   var tabs=(TabControl)window.FindName("Tabs");var segment=(ComboBox)window.FindName("Segment");
   for(int s=0;s<3;s++)for(int c=0;c<8;c++){segment.SelectedIndex=s;tabs.SelectedIndex=c;window.Render(engine.Snapshot());}
@@ -56,6 +57,7 @@ internal static class Program
   }
   Console.WriteLine("PASS: separate identity/combat sockets resolve exact actor name");
   var reportEngine=new CombatEngine(()=>t.AddSeconds(15));
+  reportEngine.Apply(new(t,CombatKind.PlayerName,1,"TestHero",SourceClass:"Templar"));
   reportEngine.Apply(new(t,CombatKind.Damage,1,"TestHero",2,"Training Scarecrow","Punishing Strike",18000,SourceClass:"Templar",DamageFlags:DamageFlags.Critical|DamageFlags.Perfect));
   reportEngine.Apply(new(t.AddSeconds(4),CombatKind.Damage,1,"TestHero",2,"Training Scarecrow","Desperate Strike",12000,SourceClass:"Templar",DamageFlags:DamageFlags.Back));
   reportEngine.Apply(new(t.AddSeconds(8),CombatKind.Damage,1,"TestHero",2,"Training Scarecrow","Pummel",9000,SourceClass:"Templar"));
@@ -81,8 +83,10 @@ internal static class Program
   var previewEngine=new CombatEngine(()=>t.AddSeconds(25)) {PreviewMode=true};
   string[] classes={"Templar","Sorcerer","Assassin","Ranger","Spiritmaster","Gladiator","Cleric","Chanter"};
   for(int i=0;i<classes.Length;i++) {
-   previewEngine.Apply(new(t,CombatKind.Damage,i+100,i==0?"TestHero":"Party member "+(i+1),900,"Training target","Opening skill",(8-i)*5000,SourceClass:classes[i]));
-   previewEngine.Apply(new(t.AddSeconds(25),CombatKind.Damage,i+100,i==0?"TestHero":"Party member "+(i+1),900,"Training target","Finishing skill",(8-i)*3500,SourceClass:classes[i]));
+   string playerName=i==0?"TestHero":"Party member "+(i+1);
+   previewEngine.Apply(new(t,CombatKind.PlayerName,i+100,playerName,SourceClass:classes[i]));
+   previewEngine.Apply(new(t,CombatKind.Damage,i+100,playerName,900,"Training target","Opening skill",(8-i)*5000,SourceClass:classes[i]));
+   previewEngine.Apply(new(t.AddSeconds(25),CombatKind.Damage,i+100,playerName,900,"Training target","Finishing skill",(8-i)*3500,SourceClass:classes[i]));
   }
   tabs.SelectedIndex=0;segment.SelectedIndex=0;Invoke("ApplyTheme","Ice Crystal");window.Show();
   var rows=(ListView)window.FindName("Rows");
