@@ -112,7 +112,7 @@ public sealed class LiveCaptureAdapter : IDisposable
         foreach(var chunk in chunks)
         foreach(var d in active is CurrentClientDecoder c?c.DecodeStream(direction,chunk,utc):active.Decode(chunk,utc))
             decoded.Add(new(utc,d.Kind,d.SourceId,d.Source,d.TargetId,d.Target,d.Skill,d.Amount,d.DamageType,d.CurrentHp,d.MaxHp,d.Effect,d.Stacks,d.SourceClass,d.DamageFlags,SourceIdentityConfirmed:d.SourceIdentityConfirmed));
-        foreach(var e in decoded.Where(x=>x.Kind==CombatKind.PlayerName || primary&&x.Kind==CombatKind.Despawn))identityBridge.Observe(scope,e);
+        foreach(var e in decoded.Where(x=>x.Kind is CombatKind.PlayerName or CombatKind.TargetHp || primary&&x.Kind==CombatKind.Despawn))identityBridge.Observe(scope,e);
         foreach(var e in decoded.Where(x=>x.Kind==CombatKind.PlayerName))ValidationRecord?.Invoke($"{utc:O}|tag=captureIdentity|entity={e.SourceId}|name={e.Source}|scope={scope}|conversation={conversation}|primary={primary}");
         if(lockedConversation==null)
         {

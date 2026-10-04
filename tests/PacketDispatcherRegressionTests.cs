@@ -132,6 +132,44 @@ public sealed class PacketDispatcherRegressionTests
 
 
     [Fact]
+    public void CaptureIdentityBridge_SharesConfirmedNpcIdentityAcrossDuplicateNpcapAdapters()
+    {
+        var bridge = new CaptureIdentityBridge();
+        var at = DateTime.UnixEpoch.AddSeconds(1);
+        const string conversation = "192.168.1.197|193.202.112.15|conversation=192.168.1.197:53688<>193.202.112.15:13328";
+        string hpScope = @"\\Device\\NPF_{ADAPTER_A}|" + conversation;
+        string combatScope = @"\\Device\\NPF_{ADAPTER_B}|" + conversation;
+
+        // Exact live identity from the 2026-10-04 capture: entity 41567 is
+        // confirmed by TargetHp as Mad Lazekhi before another adapter reports
+        // its outgoing damage as Actor 41567.
+        bridge.Observe(hpScope, new CombatEvent(
+            Utc: at, Kind: CombatKind.TargetHp,
+            TargetId: 41567, Target: "Mad Lazekhi",
+            CurrentHp: 746564, MaxHp: 900000));
+
+        var resolvedSource = bridge.Resolve(combatScope, new CombatEvent(
+            Utc: at.AddSeconds(1), Kind: CombatKind.Damage,
+            SourceId: 41567, Source: "Actor 41567",
+            TargetId: 7428, Target: "Bradyboi",
+            Skill: "Skill 1231880", Amount: 678,
+            DamageType: DamageType.Frontal));
+
+        Assert.Equal("Mad Lazekhi", resolvedSource.Source);
+        Assert.Equal("NPC", resolvedSource.SourceClass);
+        Assert.False(resolvedSource.SourceIdentityConfirmed);
+
+        var resolvedTarget = bridge.Resolve(combatScope, new CombatEvent(
+            Utc: at.AddSeconds(2), Kind: CombatKind.Damage,
+            SourceId: 7428, Source: "Bradyboi",
+            TargetId: 41567, Target: "Target 41567",
+            Skill: "Punishing Strike", Amount: 3376));
+
+        Assert.Equal("Mad Lazekhi", resolvedTarget.Target);
+    }
+
+
+    [Fact]
     public void CombatEngine_EightSecondsIdle_ArchivesAndClearsCurrentFight()
     {
         var now = DateTime.UnixEpoch;
