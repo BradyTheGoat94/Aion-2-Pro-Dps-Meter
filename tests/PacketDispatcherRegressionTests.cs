@@ -536,4 +536,25 @@ public sealed class PacketDispatcherRegressionTests
             x => Assert.Equal("ThotHokage", x.Source));
     }
 
+
+    [Theory]
+    [InlineData("240438843A0600BAE9042EAB1200010220290203DE4A0701000000904ED0010100", 79034, 208)]
+    [InlineData("250438843A0600ABD103FA931200090220900102B3CD410701000000904ED2050100", 59563, 722)]
+    public void Damage_Category6VariableAux_UsesRealHitAndDirection(
+        string hex, long sourceId, long expectedDamage)
+    {
+        // Exact live packets from 2026-10-04. Both use a non-zero category-6
+        // auxiliary field. The second encodes aux=144 in two bytes; the old
+        // fixed three-byte parser returned the stable 10000 base as damage.
+        var dispatcher = new PacketDispatcher(DamageProfile());
+        var events = dispatcher.Dispatch(Convert.FromHexString(hex), DateTime.UnixEpoch).ToList();
+
+        var hit = Assert.Single(events, x => x.Kind == CombatKind.Damage);
+        Assert.Equal(sourceId, hit.SourceId);
+        Assert.Equal(7428, hit.TargetId);
+        Assert.Equal(expectedDamage, hit.Amount);
+        Assert.Equal(DamageType.Frontal, hit.DamageType);
+        Assert.True((hit.DamageFlags & DamageFlags.Frontal) != 0);
+    }
+
 }
