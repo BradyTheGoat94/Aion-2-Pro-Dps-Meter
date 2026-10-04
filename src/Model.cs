@@ -10,7 +10,7 @@ public enum MeterSegment { Current, Previous, Overall }
 public sealed record CombatEvent(DateTime Utc, CombatKind Kind, long SourceId = 0, string Source = "", long TargetId = 0,
     string Target = "", string Skill = "", long Amount = 0, DamageType DamageType = DamageType.Unknown,
     long CurrentHp = 0, long MaxHp = 0, string Effect = "", int Stacks = 0, string SourceClass = "Unknown", DamageFlags DamageFlags = DamageFlags.None,
-    long OwnerId = 0, bool IsBoss = false);
+    long OwnerId = 0, bool IsBoss = false, bool SourceIdentityConfirmed = false);
 public sealed record PlayerStats(string Name, string ClassName, long Damage, double Dps, double Share, long Hits, double CritPercent,
     long ActorId = 0, double ActiveDps = 0, long EntityId = 0);
 public sealed record SkillStats(string Name, long Damage, long Hits, double Dps, long ActorId = 0, long Crits = 0,
