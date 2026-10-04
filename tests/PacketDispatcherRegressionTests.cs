@@ -731,6 +731,7 @@ public sealed class PacketDispatcherRegressionTests
     {
         // State setup mirrors the live 85917 -> 9909 parent-key relationship.
         // The removal and subsequent damage packets below are exact capture bytes.
+        const string ownerCombat = "240438E3AF020600B54DA16EFF00BD02000002EF36C76301000000F85F9E0D0100";
         const string spawn = "1F41369D9F055F00000000B52600000F00000000003508085461727461727573";
         const string removed = "0B218D9D9F050000";
         const string damage = "220438EDFD0204009D9F05B4D1F50005022FE9056001000000F85FA6340100";
@@ -739,7 +740,10 @@ public sealed class PacketDispatcherRegressionTests
         var records = new List<string>();
         dispatcher.ValidationRecord += records.Add;
 
-        _ = dispatcher.Dispatch(Convert.FromHexString(spawn), DateTime.UnixEpoch).ToList();
+        // Exact live Corrode packet establishes 9909 as an independently seen
+        // combat entity, matching the parent-key safety condition in production.
+        _ = dispatcher.Dispatch(Convert.FromHexString(ownerCombat), DateTime.UnixEpoch).ToList();
+        _ = dispatcher.Dispatch(Convert.FromHexString(spawn), DateTime.UnixEpoch.AddMilliseconds(100)).ToList();
         _ = dispatcher.Dispatch(Convert.FromHexString(removed), DateTime.UnixEpoch.AddSeconds(1)).ToList();
         var events = dispatcher.Dispatch(Convert.FromHexString(damage), DateTime.UnixEpoch.AddSeconds(9)).ToList();
 
