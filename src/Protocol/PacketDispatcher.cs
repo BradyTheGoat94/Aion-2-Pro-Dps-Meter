@@ -209,19 +209,20 @@ public sealed class PacketDispatcher
             }
         }
         int trailer=trailing[category]-canonicalSpecialBytes; if (trailer<0 || p+trailer>d.Length) return null; p+=trailer;
-        if (!ReadV(d, ref p, out var alternateBase)) return null;
-        if (!ReadV(d, ref p, out var alternateValue)) return null;
+        if (!ReadV(d, ref p, out _)) return null;
+        if (!ReadV(d, ref p, out _)) return null;
+        int damageOrdinalPos = p;
         if (!ReadV(d, ref p, out var damage) || damage==0 || damage>9_000_000_000UL) return null;
 
-        // Some short/multi-hit packets put the hit ordinal (1..5) in the
-        // generic damage slot. Every verified recovered layout carries the real
-        // base -> hit pair immediately before that ordinal. Use that adjacent
-        // structure directly instead of scanning farther into unrelated tail
+        // Some short/multi-hit/special packets put a hit ordinal (1..5) in the
+        // generic damage slot. Verified recovered layouts carry the real
+        // base -> hit pair BEFORE that ordinal. Search only the bounded prefix
+        // leading up to the ordinal; never scan afterward into unrelated tail
         // metadata (which falsely turned a Furious Feruk 1-damage packet into
         // 9,201 by reading a later 12039 -> 9201 metadata pair).
         if (damage <= 5)
         {
-            if (TryRecoverAlternateDamage(d, checked((int)skill), alternateBase, alternateValue, out var recoveredDamage))
+            if (TryRecoverAlternateDamage(d, checked((int)skill), damageOrdinalPos, out var recoveredDamage))
                 damage = recoveredDamage;
         }
 
@@ -670,38 +671,38 @@ public sealed class PacketDispatcher
         return string.Join(",", parts);
     }
 
-    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, ulong adjacentBase, ulong adjacentValue, out ulong damage)
+    private static bool TryRecoverAlternateDamage(ReadOnlySpan<byte> d, int skill, int ordinalPos, out ulong damage)
     {
         damage = 0;
+        if (ordinalPos <= 0 || ordinalPos > d.Length) return false;
 
-        // Verified short variants (Punishing Benediction, Desperate Strike,
-        // Poach, Vitality Evaporation, Vacuum Explosion, Corrode and Firestorm)
-        // place the authoritative base -> hit pair immediately before the tiny
-        // ordinal read by the generic damage slot. Do not scan beyond it.
-        if (skill is not (16990002 or 16990003))
-        {
-            if (adjacentBase < 5_000 || adjacentBase > 50_000) return false;
-            if (adjacentValue < 20 || adjacentValue > 5_000_000) return false;
-            damage = adjacentValue;
-            return true;
-        }
-
-        // Water/Wind Spirit basic attacks are a separately verified exception.
-        // Their adjacent pair is metadata (e.g. 12280 -> 20 or 10360 -> 78);
-        // the earlier 8751 -> 101 pair is the real damage across multiple live
-        // captures. Restrict the small scan to these exact public skill IDs.
-        int start = Math.Max(0, d.Length - 18);
-        for (int i = start; i < d.Length; i++)
+        // Bound recovery to at most 18 bytes BEFORE the tiny generic damage
+        // ordinal. This preserves every verified alternate layout, including
+        // the category-6 Parry packet (11125 -> 62), while excluding metadata
+        // that follows the ordinal.
+        int start = Math.Max(0, ordinalPos - 18);
+        ulong firstHit = 0;
+        ulong lastHit = 0;
+        bool found = false;
+        for (int i = start; i < ordinalPos; i++)
         {
             int p = i;
             if (!ReadV(d, ref p, out var first)) continue;
             if (first < 5_000 || first > 50_000) continue;
             if (!ReadV(d, ref p, out var hit)) continue;
+            if (p > ordinalPos) continue;
             if (hit < 20 || hit > 5_000_000) continue;
-            damage = hit;
-            return true;
+            if (!found) firstHit = hit;
+            lastHit = hit;
+            found = true;
         }
-        return false;
+        if (!found) return false;
+
+        // Water/Wind Spirit basic attacks are the only verified exception to
+        // taking the final pre-ordinal pair. Their earlier 8751 -> 101 pair is
+        // damage; the later pair is metadata (20/78/etc.).
+        damage = skill is 16990002 or 16990003 ? firstHit : lastHit;
+        return true;
     }
 
     private sealed record PlayerIdentity(string Name, string ClassName);
