@@ -2072,6 +2072,14 @@ internal static class PublicGameData
         ["펫 변신"] = "Pet Transformation",
     };
 
+    private static readonly IReadOnlyDictionary<int,string> VerifiedEnglishSkillNames = new Dictionary<int,string>
+    {
+        // Aion2Flow public en-US resource pack (format v14), exact ID lookup.
+        // Verified 2026-10-04 by decoding its SkillNames section; this skill is
+        // present repeatedly in the same live capture as actor 7428/Bradyboi.
+        [3000020] = "Theostone: Aultross's Promise",
+    };
+
     private static string LocalizeEnglish(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return name;
@@ -2080,6 +2088,7 @@ internal static class PublicGameData
     }
     public static string SkillName(int raw)
     {
+        if (VerifiedEnglishSkillNames.TryGetValue(raw, out var verified)) return verified;
         EnsureLoaded();
         if (skills is not null)
         {
