@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <AssemblyName>GoatMeter</AssemblyName>
+    <Product>GoatMeter</Product>
+    <ApplicationIcon>Assets/Brand/GoatHead.ico</ApplicationIcon>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -20,5 +23,6 @@
     </Content>
   </ItemGroup>
   <ItemGroup><Resource Include="Assets\ClassIcons\*.png" /></ItemGroup>
+  <ItemGroup><Resource Include="Assets\Brand\GoatHead.png" /></ItemGroup>
 </Project>
 

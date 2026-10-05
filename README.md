@@ -1,9 +1,11 @@
-# Aion2DPSPro
+# GoatMeter
 
-Experimental passive AION 2 DPS meter for Windows. The live decoder is under validation; the current opcode profile is intentionally marked unverified.
+GoatMeter is a passive AION 2 DPS meter for Windows, verified against regression tests, reviewed captures and observed dungeon runs. Independent party-total comparison and broader protocol coverage remain outstanding.
 
 ## Build
-GitHub Actions publishes a self-contained Windows x64 build. Run the **Build Windows EXE** workflow, then download the `Aion2DPSPro-win-x64` artifact.
+GitHub Actions publishes a self-contained Windows x64 build. Run the **Build Windows EXE** workflow, then download the `GoatMeter-win-x64` artifact.
+
+Extract the entire build ZIP and run `GoatMeter.exe`. Existing settings and history remain in the original Aion2DPSPro data folder.
 
 ## Live capture
 Requires Npcap on the test PC. The application observes TCP/13328 passively and does not inject into or modify the game process.
