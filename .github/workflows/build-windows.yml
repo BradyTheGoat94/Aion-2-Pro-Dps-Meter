@@ -2,15 +2,18 @@ name: Build Windows EXE
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: ["installer/**", ".github/workflows/build-windows.yml"]
   push:
     branches: [main, accuracy-reliability, identity-reports, overlay-designs]
-    paths: ["src/**", "tests/**", ".github/workflows/build-windows.yml"]
+    paths: ["src/**", "tests/**", "installer/**", ".github/workflows/build-windows.yml"]
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,3 +49,28 @@ jobs:
           name: overlay-style-previews
           path: overlay-*.png
           if-no-files-found: error
+
+      - name: Build guided Windows installer
+        shell: pwsh
+        run: |
+          $env:GOATMETER_VERSION = "1.0.${{ github.run_number }}"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/GoatMeter.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
+          if (!(Test-Path dist/GoatMeter-Setup.exe)) { throw "Installer missing" }
+          Compress-Archive -Path publish/* -DestinationPath dist/GoatMeter-win-x64.zip
+          Get-FileHash dist/GoatMeter-Setup.exe, dist/GoatMeter-win-x64.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content dist/SHA256SUMS.txt
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoatMeter-Setup
+          path: dist/
+          if-no-files-found: error
+      - name: Publish public download
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "goatmeter-build-${{ github.run_number }}"
+          gh release create $tag dist/GoatMeter-Setup.exe dist/GoatMeter-win-x64.zip dist/SHA256SUMS.txt --target "${{ github.sha }}" --title "GoatMeter $env:GITHUB_RUN_NUMBER" --notes "Windows x64 installer and portable ZIP. Installer guides Npcap setup; Npcap is downloaded separately from its official site." --latest
+          if ($LASTEXITCODE -ne 0) { throw "Release publication failed" }
