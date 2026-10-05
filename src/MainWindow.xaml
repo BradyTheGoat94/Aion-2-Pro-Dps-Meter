@@ -1,12 +1,12 @@
 <Window x:Class="Aion2DPSPro.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="GoatMeter" Icon="Assets/Brand/GoatHead.png" Width="900" Height="570" Background="#0A0E16" Foreground="#F3F6FF">
+ Title="GoatMeter" Icon="/GoatMeter;component/Assets/Brand/GoatHead.png" Width="900" Height="570" Background="#0A0E16" Foreground="#F3F6FF">
  <Grid Margin="18">
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <DockPanel Margin="0,0,0,12">
    <StackPanel Orientation="Horizontal">
-    <Image Source="Assets/Brand/GoatHead.png" Width="40" Height="40" Margin="0,0,10,0"/>
+    <Image Source="/GoatMeter;component/Assets/Brand/GoatHead.png" Width="40" Height="40" Margin="0,0,10,0"/>
     <StackPanel>
     <TextBlock Text="GoatMeter" FontSize="24" FontWeight="Bold"/>
     <TextBlock Text="NO SIMULATED DATA — values remain zero until live packets decode" Foreground="#FF6B6B" FontWeight="SemiBold"/>
