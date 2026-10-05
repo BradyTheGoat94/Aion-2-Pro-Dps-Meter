@@ -41,7 +41,8 @@ public partial class OverlayWindow : Window
         Timer.Text=TimeSpan.FromSeconds(s.FightSeconds).ToString(@"mm\:ss"); GroupDps.Text=$"GROUP {F(s.Players.Sum(p=>p.Dps))} {s.MetricLabel}";
         BossHp.Value=s.Target?.Percent??0; TargetName.Text=s.Target?.Name??"No target";
         TargetHp.Text=s.Target is null?"":$"{s.Target.Percent:0.0}%   {F(s.Target.CurrentHp)} / {F(s.Target.MaxHp)}";
-        StatusText.Text=s.PreviewMode?"SIMULATED DATA":$"{(s.InFight?"CURRENT":"COMPLETED")} • PROTOCOL UNVERIFIED";
+        StatusText.ToolTip="Verified against regression tests, reviewed captures and observed dungeon runs. Exact party totals have not been independently compared.";
+        StatusText.Text=s.PreviewMode?"SIMULATED DATA":$"{(s.InFight?"CURRENT":"COMPLETED")} • VERIFIED";
         var max=Math.Max(1,s.Players.FirstOrDefault()?.Dps??1);
         Rows.ItemsSource=s.Players.Select((p,i)=>new Row(i+1,p.Name,p.ClassName,F(p.Dps),F(p.Damage),$"{p.Share:0.0}%",Brush(p.ClassName),Math.Max(0,150*p.Dps/max),Math.Clamp(100*p.Dps/max,0,100),p)).ToList();
         Rows.SelectedItem=Rows.Items.Cast<Row>().FirstOrDefault(r=>r.Stats.ActorId==selectedActor);

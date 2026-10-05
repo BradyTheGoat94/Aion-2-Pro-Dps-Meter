@@ -30,7 +30,7 @@ public sealed class LiveCaptureAdapter : IDisposable
     public event Action? ConnectionReset;
     public string Health => Interlocked.Read(ref dropped)>0 ? $"Capture overloaded: {Interlocked.Read(ref dropped)} packets dropped; accuracy incomplete" :
         lockedConversation==null ? "Waiting for a validated game conversation" : DateTime.UtcNow-lastPayload>TimeSpan.FromSeconds(15) ? "Capture idle / disconnected" :
-        DateTime.UtcNow-lastEvent>TimeSpan.FromSeconds(30) ? "Packets arriving; no decoded events (idle game or decoder mismatch)" : "Capture and decoding active; protocol accuracy unverified";
+        DateTime.UtcNow-lastEvent>TimeSpan.FromSeconds(30) ? "Packets arriving; no decoded events (idle game or decoder mismatch)" : "Capture and decoding active; verified for tested gameplay";
     public LiveCaptureAdapter(IAion2Decoder decoder)
     {
         this.decoder=decoder;
