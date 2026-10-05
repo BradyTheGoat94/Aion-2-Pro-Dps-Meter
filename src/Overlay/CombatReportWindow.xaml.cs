@@ -55,7 +55,7 @@ public partial class CombatReportWindow : Window
         var effects=s.Buffs.Where(x=>x.TargetId==actorId).Select(x=>new {x.Name,Kind=x.IsDebuff?"Debuff":"Buff",Source=Name(x.SourceId),x.Uptime,x.ActiveSeconds,x.MaxStacks}).ToArray();
         EffectGrid.ItemsSource=effects;EffectEmpty.Visibility=effects.Length==0?Visibility.Visible:Visibility.Collapsed;
         EventGrid.ItemsSource=s.RecentEvents.Where(x=>x.SourceId==actorId||x.TargetId==actorId).Reverse().Select(x=>new {Time=x.Utc.ToLocalTime().ToString("HH:mm:ss.fff"),Direction=x.SourceId==actorId?"Outgoing":"Incoming",Kind=x.Kind.ToString(),Skill=string.IsNullOrWhiteSpace(x.Skill)?x.Effect:x.Skill,x.Amount,Flags=x.DamageFlags==DamageFlags.None?x.DamageType.ToString():x.DamageFlags.ToString()}).ToArray();
-        Footnote.Text=$"{s.EndReason}  Protocol unverified. Empty categories may have no events or unsupported live decoding. *Active rate estimates attack time. Event feed: latest 2,000 encounter events. Skill and target totals include all accepted events.".Trim();
+        Footnote.Text=$"{s.EndReason}  Verified against reviewed captures and observed dungeon runs. Exact party totals have not been independently compared. Empty categories may have no events or unsupported live decoding. *Active rate estimates attack time. Event feed: latest 2,000 encounter events. Skill and target totals include all accepted events.".Trim();
     }
     public sealed record SkillRow(string Name,long Damage,double Dps,double Share,long Hits,long Crits,double CritPercent,double Average,long MinHit,long MaxHit,long Perfect,long Back,long Front,long Double,long Parry,long Multi);
 }
