@@ -34,16 +34,24 @@ public partial class MainWindow : Window
         var validationDir=System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Aion2DPSPro","Validation");
         System.IO.Directory.CreateDirectory(validationDir);
         validationPath=System.IO.Path.Combine(validationDir,$"combat-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-        var validationCounts=new Dictionary<string,int>();
+        int verboseValidationCount=0;
+        var validationGate=new object();
         void RecordValidation(string line)
         {
             var tag=line.Split('|').FirstOrDefault(x=>x.StartsWith("tag="))??"tag=other";
-            string bucket=tag is "tag=identityLifecycle" or "tag=entityBridge" or "tag=mobIdentity" or "tag=targetHpCandidate"?"verbose":
-                tag=="tag=resolvedCombat"?"resolved":tag is "tag=damage" or "tag=dot"?"combat":tag=="tag=damageFlags"?"flags":tag.Contains("Identity",StringComparison.OrdinalIgnoreCase)||tag=="tag=identityMap"?"identity":"other";
-            int limit=bucket is "combat" or "resolved"?600:bucket=="verbose"?50:bucket=="flags"?100:200;
-            if(validationCounts.GetValueOrDefault(bucket)>=limit)return;
-            try {System.IO.File.AppendAllText(validationPath,line+Environment.NewLine);validationCounts[bucket]=validationCounts.GetValueOrDefault(bucket)+1;}
-            catch(Exception ex) {lock(diagnosticsGate)captureStatus=$"Validation logging failed: {ex.Message}";}
+            // Discovery packets are sampled; combat, HP, identity and ownership
+            // evidence must continue through the entire session and boss kill.
+            bool verbose=tag is "tag=identityLifecycle" or "tag=entityBridge" or "tag=targetHpCandidate";
+            lock(validationGate)
+            {
+                if(verbose && verboseValidationCount>=50)return;
+                try
+                {
+                    System.IO.File.AppendAllText(validationPath,line+Environment.NewLine);
+                    if(verbose)verboseValidationCount++;
+                }
+                catch(Exception ex) {lock(diagnosticsGate)captureStatus=$"Validation logging failed: {ex.Message}";}
+            }
         }
         decoder.ValidationRecord+=RecordValidation;
         decoder.Diagnostic += d => {lock(diagnosticsGate) {decoderDiagnostics++;if(d.Stage=="parse")recognized++;lastDecoder=$"[{d.Stage}] {d.Message} ({d.Bytes} bytes)";}};
